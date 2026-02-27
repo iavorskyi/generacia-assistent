@@ -6,10 +6,10 @@ import Link from "next/link";
 
 const messages: Record<string, string> = {
   AccessDenied:
-    "Access denied. Only company email addresses are allowed to sign in.",
-  OAuthSignin: "Error starting the sign-in process. Please try again.",
-  OAuthCallback: "Error completing sign-in. Please try again.",
-  default: "An error occurred during sign-in. Please try again.",
+    "Доступ заборонено. Тільки корпоративні email-адреси можуть входити.",
+  OAuthSignin: "Помилка при запуску процесу входу. Спробуйте ще раз.",
+  OAuthCallback: "Помилка при завершенні входу. Спробуйте ще раз.",
+  default: "Виникла помилка під час входу. Спробуйте ще раз.",
 };
 
 function ErrorMessage() {
@@ -30,7 +30,7 @@ export default function AuthErrorPage() {
           <span className="text-red-600 text-3xl">✕</span>
         </div>
         <h1 className="text-2xl font-bold text-gray-900 mb-2">
-          Sign-in Failed
+          Помилка входу
         </h1>
         <Suspense fallback={<p className="text-gray-500 mb-8">{messages.default}</p>}>
           <ErrorMessage />
@@ -39,7 +39,7 @@ export default function AuthErrorPage() {
           href="/auth/signin"
           className="inline-block bg-blue-600 text-white rounded-lg px-6 py-3 font-medium hover:bg-blue-700 transition-colors"
         >
-          Try Again
+          Спробувати знову
         </Link>
       </div>
     </div>

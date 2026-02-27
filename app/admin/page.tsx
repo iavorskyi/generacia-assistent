@@ -99,7 +99,7 @@ export default function AdminUploadPage() {
           priority: 0,
           tokenCount: 0,
           documentId: "",
-          error: "Network error",
+          error: "Помилка мережі",
         });
       }
     }
@@ -127,12 +127,12 @@ export default function AdminUploadPage() {
       const res = await fetch("/api/admin/drive");
       const data = await res.json();
       if (!res.ok) {
-        setDriveError(data.error ?? "Failed to load Drive preview");
+        setDriveError(data.error ?? "Не вдалося завантажити попередній перегляд Drive");
       } else {
         setDrivePreview(data);
       }
     } catch {
-      setDriveError("Network error");
+      setDriveError("Помилка мережі");
     } finally {
       setDrivePreviewLoading(false);
     }
@@ -145,13 +145,13 @@ export default function AdminUploadPage() {
       const res = await fetch("/api/admin/drive", { method: "POST" });
       const data = await res.json();
       if (!res.ok) {
-        setDriveError(data.error ?? "Sync failed");
+        setDriveError(data.error ?? "Синхронізація не вдалася");
       } else {
         setDriveSyncResult(data);
         await loadDrivePreview();
       }
     } catch {
-      setDriveError("Network error");
+      setDriveError("Помилка мережі");
     } finally {
       setDriveSyncing(false);
     }
@@ -164,10 +164,10 @@ export default function AdminUploadPage() {
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link href="/" className="text-gray-500 hover:text-gray-700 text-sm">
-              ← Back to Chat
+              ← Назад до чату
             </Link>
             <h1 className="text-xl font-semibold text-gray-900">
-              Admin — Upload Documents
+              Адмін — Завантаження документів
             </h1>
           </div>
           <div className="flex items-center gap-4">
@@ -175,13 +175,13 @@ export default function AdminUploadPage() {
               href="/admin/documents"
               className="text-sm text-blue-600 hover:text-blue-700"
             >
-              Manage Documents
+              Керування документами
             </Link>
             <Link
               href="/admin/costs"
               className="text-sm text-blue-600 hover:text-blue-700"
             >
-              Cost Dashboard
+              Панель витрат
             </Link>
           </div>
         </div>
@@ -218,10 +218,10 @@ export default function AdminUploadPage() {
             </svg>
           </div>
           <p className="text-lg font-medium text-gray-700 mb-2">
-            Drop files here or click to upload
+            Перетягніть файли сюди або натисніть для завантаження
           </p>
           <p className="text-sm text-gray-400 mb-6">
-            Supports PDF, DOCX, DOC, TXT, MD — up to 10MB each
+            Підтримує PDF, DOCX, DOC, TXT, MD — до 10МБ кожен
           </p>
           <input
             ref={fileInputRef}
@@ -236,7 +236,7 @@ export default function AdminUploadPage() {
             disabled={uploading}
             className="bg-blue-600 text-white rounded-xl px-6 py-2.5 font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
           >
-            {uploading ? "Uploading..." : "Select Files"}
+            {uploading ? "Завантаження..." : "Вибрати файли"}
           </button>
         </div>
 
@@ -244,7 +244,7 @@ export default function AdminUploadPage() {
         {results.length > 0 && (
           <div className="mt-8">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
-              Upload Results
+              Результати завантаження
             </h2>
             <div className="space-y-3">
               {results.map((r, i) => (
@@ -270,10 +270,10 @@ export default function AdminUploadPage() {
                     ) : (
                       <div className="flex gap-4 mt-1">
                         <span className="text-xs text-gray-500 capitalize">
-                          Category: {r.category}
+                          Категорія: {r.category}
                         </span>
                         <span className="text-xs text-gray-500">
-                          Priority: {r.priority}
+                          Пріоритет: {r.priority}
                         </span>
                         <span className="text-xs text-gray-500">
                           ~{r.tokenCount.toLocaleString()} tokens
@@ -299,10 +299,10 @@ export default function AdminUploadPage() {
                 </div>
                 <div>
                   <h2 className="text-base font-semibold text-gray-900">
-                    Google Drive Sync
+                    Синхронізація Google Drive
                   </h2>
                   <p className="text-sm text-gray-400">
-                    Syncs PDF, DOCX, TXT and MD files from the configured folder
+                    Синхронізує PDF, DOCX, TXT та MD файли з налаштованої папки
                   </p>
                 </div>
               </div>
@@ -312,14 +312,14 @@ export default function AdminUploadPage() {
                   disabled={drivePreviewLoading || driveSyncing}
                   className="text-sm text-gray-500 hover:text-gray-700 disabled:opacity-40 transition-colors"
                 >
-                  {drivePreviewLoading ? "Loading..." : "Preview"}
+                  {drivePreviewLoading ? "Завантаження..." : "Попередній перегляд"}
                 </button>
                 <button
                   onClick={executeDriveSync}
                   disabled={driveSyncing || drivePreviewLoading}
                   className="bg-green-600 text-white rounded-xl px-5 py-2 text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
                 >
-                  {driveSyncing ? "Syncing..." : "Sync from Google Drive"}
+                  {driveSyncing ? "Синхронізація..." : "Синхронізувати з Google Drive"}
                 </button>
               </div>
             </div>
@@ -335,12 +335,12 @@ export default function AdminUploadPage() {
             {driveSyncResult && (
               <div className="rounded-xl bg-green-50 border border-green-200 px-4 py-3 mb-4">
                 <p className="text-sm font-medium text-green-800 mb-1">
-                  Sync complete
+                  Синхронізацію завершено
                 </p>
                 <div className="flex gap-4 text-sm text-green-700">
-                  <span>{driveSyncResult.added} added</span>
-                  <span>{driveSyncResult.updated} updated</span>
-                  <span>{driveSyncResult.unchanged} unchanged</span>
+                  <span>{driveSyncResult.added} додано</span>
+                  <span>{driveSyncResult.updated} оновлено</span>
+                  <span>{driveSyncResult.unchanged} без змін</span>
                 </div>
                 {driveSyncResult.errors.length > 0 && (
                   <div className="mt-2 space-y-1">
@@ -358,8 +358,7 @@ export default function AdminUploadPage() {
             {drivePreview && drivePreview.files.length > 0 && (
               <div>
                 <p className="text-xs text-gray-400 mb-3">
-                  {drivePreview.fileCount} file
-                  {drivePreview.fileCount !== 1 ? "s" : ""} in folder
+                  {drivePreview.fileCount} файл{drivePreview.fileCount === 1 ? "" : drivePreview.fileCount < 5 ? "и" : "ів"} у папці
                 </p>
                 <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                   {drivePreview.files.map((file) => (
@@ -389,7 +388,7 @@ export default function AdminUploadPage() {
 
             {drivePreview && drivePreview.files.length === 0 && (
               <p className="text-sm text-gray-400 text-center py-4">
-                No supported files found in the configured folder.
+                Підтримувані файли не знайдено у налаштованій папці.
               </p>
             )}
           </div>
