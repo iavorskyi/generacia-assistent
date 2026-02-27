@@ -2,11 +2,11 @@
  * Script to grant admin privileges to a user by email.
  *
  * Usage:
- *   ADMIN_EMAIL=user@company.com npx ts-node --compiler-options '{"module":"CommonJS"}' scripts/make-admin.ts
+ *   npm run make-admin -- user@example.com
  *
  * Requirements:
- *   - The user must have signed in at least once (so their account exists in Firestore)
- *   - FIREBASE_ADMIN_* env vars must be set (or use GOOGLE_APPLICATION_CREDENTIALS)
+ *   - The user must have signed in at least once (so their record exists in Firestore)
+ *   - FIREBASE_ADMIN_* env vars must be set in .env.local
  */
 
 import * as admin from "firebase-admin";
@@ -16,12 +16,11 @@ import * as path from "path";
 // Load .env.local
 dotenv.config({ path: path.resolve(__dirname, "../.env.local") });
 
-const email = process.env.ADMIN_EMAIL;
+// Accept email from CLI arg or ADMIN_EMAIL env var
+const email = process.argv[2] || process.env.ADMIN_EMAIL;
 if (!email) {
-  console.error("Error: ADMIN_EMAIL environment variable is required");
-  console.error(
-    "Usage: ADMIN_EMAIL=user@company.com npx ts-node scripts/make-admin.ts"
-  );
+  console.error("Error: provide email as argument or set ADMIN_EMAIL");
+  console.error("Usage: npm run make-admin -- user@example.com");
   process.exit(1);
 }
 
@@ -40,37 +39,32 @@ async function makeAdmin(email: string) {
     });
   }
 
-  const auth = admin.auth();
   const db = admin.firestore();
 
-  try {
-    // Find user by email
-    const userRecord = await auth.getUserByEmail(email);
-    console.log(`Found user: ${userRecord.displayName} (${userRecord.uid})`);
+  // Query Firestore users collection by email
+  const snapshot = await db
+    .collection("users")
+    .where("email", "==", email)
+    .limit(1)
+    .get();
 
-    // Set admin flag in Firestore
-    await db.collection("users").doc(userRecord.uid).set(
-      {
-        email: userRecord.email,
-        displayName: userRecord.displayName,
-        isAdmin: true,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      },
-      { merge: true }
+  if (snapshot.empty) {
+    console.error(
+      `Error: No user found with email ${email}.\nThe user must sign in to the app at least once first.`
     );
-
-    console.log(`✓ Successfully granted admin privileges to ${email}`);
-    console.log("  They will have admin access on their next sign-in.");
-  } catch (error) {
-    if ((error as { code?: string }).code === "auth/user-not-found") {
-      console.error(
-        `Error: No user found with email ${email}. The user must sign in first.`
-      );
-    } else {
-      console.error("Error:", error);
-    }
     process.exit(1);
   }
+
+  const userDoc = snapshot.docs[0];
+  await userDoc.ref.set({ isAdmin: true }, { merge: true });
+
+  const data = userDoc.data();
+  console.log(`✓ Successfully granted admin privileges to ${email}`);
+  console.log(`  User: ${data.displayName ?? "(no name)"} — Firestore ID: ${userDoc.id}`);
+  console.log("  They will have admin access on their next sign-in.");
 }
 
-makeAdmin(email).then(() => process.exit(0));
+makeAdmin(email).then(() => process.exit(0)).catch((err) => {
+  console.error("Error:", err);
+  process.exit(1);
+});

@@ -17,6 +17,8 @@ export interface Document {
   uploadedAt: Date;
   usageCount: number;
   lastUsed?: Date;
+  driveFileId?: string;
+  driveModifiedTime?: string;
 }
 
 export interface Message {

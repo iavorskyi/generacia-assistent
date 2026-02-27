@@ -6,19 +6,20 @@ import { selectDocuments } from "@/lib/document-selector";
 import { chatWithCachedContext, calculateCost, ChatMessage } from "@/lib/claude";
 import { FieldValue } from "firebase-admin/firestore";
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
+  try {
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    return NextResponse.json({ error: "Необхідна автентифікація" }, { status: 401 });
   }
 
   const { query, conversationId } = await request.json();
 
   if (!query?.trim()) {
-    return NextResponse.json({ error: "Query is required" }, { status: 400 });
+    return NextResponse.json({ error: "Запит обов'язковий" }, { status: 400 });
   }
 
   const db = getAdminDb();
@@ -35,7 +36,7 @@ export async function POST(request: NextRequest) {
       const data = convDoc.data()!;
       // Verify ownership
       if (data.userId !== session.user.id) {
-        return NextResponse.json({ error: "Access denied" }, { status: 403 });
+        return NextResponse.json({ error: "Доступ заборонено" }, { status: 403 });
       }
       conversationHistory = data.messages || [];
     } else {
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "No documents available. Please ask an admin to upload company documents first.",
+          "Документи недоступні. Попросіть адміністратора завантажити документи компанії.",
       },
       { status: 404 }
     );
@@ -81,20 +82,21 @@ export async function POST(request: NextRequest) {
   // Calculate cache expiry (5 minutes from now)
   const cacheValidUntil = new Date(Date.now() + 5 * 60 * 1000);
 
+  // Build conversation data - only include cache fields when not from cache
+  const conversationData: Record<string, unknown> = {
+    userId: session.user.id,
+    messages: newMessages.slice(-20), // keep last 20 messages
+    updatedAt: FieldValue.serverTimestamp(),
+    createdAt: FieldValue.serverTimestamp(),
+  };
+
+  if (!fromCache) {
+    conversationData.cachedDocumentIds = documents.map((d) => d.id);
+    conversationData.cacheValidUntil = cacheValidUntil;
+  }
+
   // Save conversation
-  await convRef.set(
-    {
-      userId: session.user.id,
-      messages: newMessages.slice(-20), // keep last 20 messages
-      cachedDocumentIds: fromCache
-        ? undefined
-        : documents.map((d) => d.id),
-      cacheValidUntil: fromCache ? undefined : cacheValidUntil,
-      updatedAt: FieldValue.serverTimestamp(),
-      createdAt: FieldValue.serverTimestamp(),
-    },
-    { merge: true }
-  );
+  await convRef.set(conversationData, { merge: true });
 
   // Track usage metrics (fire and forget)
   trackUsage(db, result.usage, cost).catch(console.error);
@@ -109,6 +111,13 @@ export async function POST(request: NextRequest) {
     usage: result.usage,
     cost,
   });
+  } catch (error) {
+    console.error("Chat API error:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Внутрішня помилка сервера" },
+      { status: 500 }
+    );
+  }
 }
 
 async function trackUsage(

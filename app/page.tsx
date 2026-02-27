@@ -12,10 +12,10 @@ interface Message {
 }
 
 const SUGGESTED_QUESTIONS = [
-  "What is our vacation policy?",
-  "How do I submit an expense report?",
-  "What are the engineering deployment procedures?",
-  "Where can I find the employee handbook?",
+  "Яка наша політика відпусток?",
+  "Як подати звіт про витрати?",
+  "Які процедури деплою в інженерії?",
+  "Де знайти довідник працівника?",
 ];
 
 export default function Home() {
@@ -48,10 +48,10 @@ export default function Home() {
             <span className="text-white text-3xl font-bold">AI</span>
           </div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">
-            Company Assistant
+            Асистент компанії
           </h1>
           <p className="text-gray-500 mb-8">
-            Sign in with your company account to get started
+            Увійдіть з корпоративним акаунтом, щоб почати
           </p>
           <button
             onClick={() => signIn("google")}
@@ -75,7 +75,7 @@ export default function Home() {
                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
               />
             </svg>
-            Sign in with Google
+            Увійти через Google
           </button>
         </div>
       </div>
@@ -109,10 +109,21 @@ export default function Home() {
         body: JSON.stringify({ query, conversationId }),
       });
 
-      const data = await res.json();
+      const text = await res.text();
+
+      if (!text) {
+        throw new Error("Сервер повернув порожню відповідь. Спробуйте ще раз.");
+      }
+
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error("Невірна відповідь від сервера. Спробуйте ще раз.");
+      }
 
       if (!res.ok) {
-        throw new Error(data.error || "Failed to get response");
+        throw new Error(data.error || "Не вдалося отримати відповідь");
       }
 
       setConversationId(data.conversationId);
@@ -130,7 +141,7 @@ export default function Home() {
     } catch (error) {
       const errorMessage: Message = {
         role: "assistant",
-        content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : "Unknown error"}. Please try again.`,
+        content: `Вибачте, виникла помилка: ${error instanceof Error ? error.message : "Невідома помилка"}. Спробуйте ще раз.`,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
@@ -155,20 +166,20 @@ export default function Home() {
             <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center text-sm font-bold">
               AI
             </div>
-            <span className="font-semibold">Company Assistant</span>
+            <span className="font-semibold">Асистент компанії</span>
           </div>
           <button
             onClick={startNewChat}
             className="w-full bg-gray-700 hover:bg-gray-600 text-white rounded-lg px-3 py-2 text-sm text-left transition-colors"
           >
-            + New Chat
+            + Новий чат
           </button>
         </div>
 
         {/* Cache hint */}
         {cacheHint && (
           <div className="mx-3 mt-3 p-2 bg-green-900/40 border border-green-700 rounded-lg text-xs text-green-300">
-            Cache active — follow-up questions are 90% cheaper!
+            Кеш активний — додаткові питання на 90% дешевші!
           </div>
         )}
 
@@ -181,7 +192,7 @@ export default function Home() {
               href="/admin"
               className="block w-full text-center bg-gray-700 hover:bg-gray-600 rounded-lg px-3 py-2 text-sm mb-3 transition-colors"
             >
-              Admin Dashboard
+              Панель адміністратора
             </a>
           )}
           <div className="flex items-center gap-2 mb-2">
@@ -200,7 +211,7 @@ export default function Home() {
             onClick={() => signOut()}
             className="w-full text-xs text-gray-400 hover:text-white transition-colors text-left"
           >
-            Sign out
+            Вийти
           </button>
         </div>
       </div>
@@ -215,10 +226,10 @@ export default function Home() {
                 <span className="text-blue-600 text-2xl font-bold">AI</span>
               </div>
               <h2 className="text-2xl font-semibold text-gray-800 mb-2">
-                How can I help you today?
+                Чим я можу вам допомогти?
               </h2>
               <p className="text-gray-500 mb-8">
-                Ask me anything about company policies, procedures, and documentation.
+                Запитайте мене про політики компанії, процедури та документацію.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {SUGGESTED_QUESTIONS.map((q) => (
@@ -248,7 +259,7 @@ export default function Home() {
                           AI
                         </div>
                         <span className="text-xs text-gray-400">
-                          Company Assistant
+                          Асистент компанії
                           {msg.cacheStatus === "hit" && (
                             <span className="ml-2 text-green-500">⚡ cached</span>
                           )}
@@ -316,7 +327,7 @@ export default function Home() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask a question about company policies, benefits, procedures..."
+                placeholder="Задайте питання про політики компанії, пільги, процедури..."
                 rows={1}
                 className="flex-1 bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none resize-none max-h-32"
                 style={{ minHeight: "24px" }}
@@ -343,7 +354,7 @@ export default function Home() {
               </button>
             </div>
             <p className="text-xs text-gray-400 text-center mt-2">
-              Answers are based on company documents only. Press Enter to send.
+              Відповіді базуються лише на документах компанії. Натисніть Enter для відправки.
             </p>
           </div>
         </div>

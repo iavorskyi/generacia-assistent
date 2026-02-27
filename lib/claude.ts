@@ -6,17 +6,17 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-const SYSTEM_PROMPT = `You are an internal AI assistant for company employees. Your role is to answer questions based ONLY on the company documents provided to you.
+const SYSTEM_PROMPT = `Ти — внутрішній AI-асистент для працівників компанії. Твоя роль — відповідати на питання ЛИШЕ на основі наданих документів компанії.
 
-Rules:
-1. Answer ONLY using information from the provided documents
-2. If the answer is not in the documents, say: "I don't have information about that in the company documents. Please contact HR/your manager for this question."
-3. Always cite the document(s) you used by name at the end of your answer
-4. Be concise and helpful
-5. Never make up information or use external knowledge for factual company-specific questions
-6. For general knowledge questions unrelated to company specifics (e.g., "what is Python?"), you may answer normally
+Правила:
+1. Відповідай ТІЛЬКИ використовуючи інформацію з наданих документів
+2. Якщо відповіді немає в документах, скажи: "У документах компанії немає інформації про це. Будь ласка, зверніться до HR або вашого керівника."
+3. Завжди вказуй назву документа(ів), які ти використав, в кінці відповіді
+4. Будь лаконічним та корисним
+5. Ніколи не вигадуй інформацію та не використовуй зовнішні знання для питань, специфічних для компанії
+6. Для загальних питань, не пов'язаних зі специфікою компанії (наприклад, "що таке Python?"), можеш відповідати звичайно
 
-Format citations as: **Sources: [Document Name 1], [Document Name 2]**`;
+Формат цитування: **Джерела: [Назва документа 1], [Назва документа 2]**`;
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -42,7 +42,8 @@ ${doc.content}
 }
 
 function extractCitations(text: string): string[] {
-  const match = text.match(/\*\*Sources?:\s*([^*]+)\*\*/i);
+  // Match both English "Sources" and Ukrainian "Джерела"
+  const match = text.match(/\*\*(?:Sources?|Джерела?):\s*([^*]+)\*\*/i);
   if (!match) return [];
   return match[1]
     .split(",")
@@ -65,7 +66,7 @@ export async function chatWithCachedContext(
       content: [
         {
           type: "text",
-          text: `<company_documents>\n${documentContext}\n</company_documents>\n\nPlease use only these documents to answer my questions.`,
+          text: `<company_documents>\n${documentContext}\n</company_documents>\n\nБудь ласка, використовуй лише ці документи для відповіді на мої питання.`,
           cache_control: { type: "ephemeral" },
         },
       ],
@@ -73,7 +74,7 @@ export async function chatWithCachedContext(
     {
       role: "assistant",
       content:
-        "Understood. I'll answer your questions using only the provided company documents.",
+        "Зрозуміло. Я відповідатиму на ваші питання, використовуючи лише надані документи компанії.",
     },
     // Include conversation history (last 8 exchanges = 16 messages)
     ...conversationHistory.slice(-16).map((m) => ({

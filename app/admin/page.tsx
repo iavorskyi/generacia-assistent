@@ -14,6 +14,27 @@ interface UploadResult {
   error?: string;
 }
 
+interface DrivePreviewFile {
+  id: string;
+  name: string;
+  modifiedTime: string;
+  size: string;
+  status: "new" | "update" | "unchanged";
+}
+
+interface DrivePreview {
+  folderId: string;
+  fileCount: number;
+  files: DrivePreviewFile[];
+}
+
+interface DriveSyncResult {
+  added: number;
+  updated: number;
+  unchanged: number;
+  errors: string[];
+}
+
 export default function AdminUploadPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -21,6 +42,12 @@ export default function AdminUploadPage() {
   const [uploading, setUploading] = useState(false);
   const [results, setResults] = useState<UploadResult[]>([]);
   const [dragOver, setDragOver] = useState(false);
+
+  const [driveSyncing, setDriveSyncing] = useState(false);
+  const [drivePreviewLoading, setDrivePreviewLoading] = useState(false);
+  const [drivePreview, setDrivePreview] = useState<DrivePreview | null>(null);
+  const [driveSyncResult, setDriveSyncResult] = useState<DriveSyncResult | null>(null);
+  const [driveError, setDriveError] = useState<string | null>(null);
 
   if (status === "loading") {
     return (
@@ -72,7 +99,7 @@ export default function AdminUploadPage() {
           priority: 0,
           tokenCount: 0,
           documentId: "",
-          error: "Network error",
+          error: "Помилка мережі",
         });
       }
     }
@@ -92,6 +119,44 @@ export default function AdminUploadPage() {
     uploadFiles(e.dataTransfer.files);
   };
 
+  const loadDrivePreview = async () => {
+    setDrivePreviewLoading(true);
+    setDriveError(null);
+    setDriveSyncResult(null);
+    try {
+      const res = await fetch("/api/admin/drive");
+      const data = await res.json();
+      if (!res.ok) {
+        setDriveError(data.error ?? "Не вдалося завантажити попередній перегляд Drive");
+      } else {
+        setDrivePreview(data);
+      }
+    } catch {
+      setDriveError("Помилка мережі");
+    } finally {
+      setDrivePreviewLoading(false);
+    }
+  };
+
+  const executeDriveSync = async () => {
+    setDriveSyncing(true);
+    setDriveError(null);
+    try {
+      const res = await fetch("/api/admin/drive", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setDriveError(data.error ?? "Синхронізація не вдалася");
+      } else {
+        setDriveSyncResult(data);
+        await loadDrivePreview();
+      }
+    } catch {
+      setDriveError("Помилка мережі");
+    } finally {
+      setDriveSyncing(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -99,10 +164,10 @@ export default function AdminUploadPage() {
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link href="/" className="text-gray-500 hover:text-gray-700 text-sm">
-              ← Back to Chat
+              ← Назад до чату
             </Link>
             <h1 className="text-xl font-semibold text-gray-900">
-              Admin — Upload Documents
+              Адмін — Завантаження документів
             </h1>
           </div>
           <div className="flex items-center gap-4">
@@ -110,13 +175,13 @@ export default function AdminUploadPage() {
               href="/admin/documents"
               className="text-sm text-blue-600 hover:text-blue-700"
             >
-              Manage Documents
+              Керування документами
             </Link>
             <Link
               href="/admin/costs"
               className="text-sm text-blue-600 hover:text-blue-700"
             >
-              Cost Dashboard
+              Панель витрат
             </Link>
           </div>
         </div>
@@ -153,10 +218,10 @@ export default function AdminUploadPage() {
             </svg>
           </div>
           <p className="text-lg font-medium text-gray-700 mb-2">
-            Drop files here or click to upload
+            Перетягніть файли сюди або натисніть для завантаження
           </p>
           <p className="text-sm text-gray-400 mb-6">
-            Supports PDF, DOCX, DOC, TXT, MD — up to 10MB each
+            Підтримує PDF, DOCX, DOC, TXT, MD — до 10МБ кожен
           </p>
           <input
             ref={fileInputRef}
@@ -171,7 +236,7 @@ export default function AdminUploadPage() {
             disabled={uploading}
             className="bg-blue-600 text-white rounded-xl px-6 py-2.5 font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
           >
-            {uploading ? "Uploading..." : "Select Files"}
+            {uploading ? "Завантаження..." : "Вибрати файли"}
           </button>
         </div>
 
@@ -179,7 +244,7 @@ export default function AdminUploadPage() {
         {results.length > 0 && (
           <div className="mt-8">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
-              Upload Results
+              Результати завантаження
             </h2>
             <div className="space-y-3">
               {results.map((r, i) => (
@@ -205,10 +270,10 @@ export default function AdminUploadPage() {
                     ) : (
                       <div className="flex gap-4 mt-1">
                         <span className="text-xs text-gray-500 capitalize">
-                          Category: {r.category}
+                          Категорія: {r.category}
                         </span>
                         <span className="text-xs text-gray-500">
-                          Priority: {r.priority}
+                          Пріоритет: {r.priority}
                         </span>
                         <span className="text-xs text-gray-500">
                           ~{r.tokenCount.toLocaleString()} tokens
@@ -221,6 +286,113 @@ export default function AdminUploadPage() {
             </div>
           </div>
         )}
+        {/* Google Drive Sync */}
+        <div className="mt-10">
+          <div className="bg-white rounded-2xl border border-gray-200 p-6">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center shrink-0">
+                  <svg className="w-5 h-5 text-green-600" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M7.71 3.5L1.15 15l3.43 6 6.56-11.5L7.71 3.5zM22.85 15L16.29 3.5H9.17l6.56 11.5L22.85 15zM9.89 16.5L6.46 22.5h11.08l3.43-6H9.89z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold text-gray-900">
+                    Синхронізація Google Drive
+                  </h2>
+                  <p className="text-sm text-gray-400">
+                    Синхронізує PDF, DOCX, TXT та MD файли з налаштованої папки
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={loadDrivePreview}
+                  disabled={drivePreviewLoading || driveSyncing}
+                  className="text-sm text-gray-500 hover:text-gray-700 disabled:opacity-40 transition-colors"
+                >
+                  {drivePreviewLoading ? "Завантаження..." : "Попередній перегляд"}
+                </button>
+                <button
+                  onClick={executeDriveSync}
+                  disabled={driveSyncing || drivePreviewLoading}
+                  className="bg-green-600 text-white rounded-xl px-5 py-2 text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
+                >
+                  {driveSyncing ? "Синхронізація..." : "Синхронізувати з Google Drive"}
+                </button>
+              </div>
+            </div>
+
+            {/* Error */}
+            {driveError && (
+              <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-4">
+                {driveError}
+              </div>
+            )}
+
+            {/* Sync result */}
+            {driveSyncResult && (
+              <div className="rounded-xl bg-green-50 border border-green-200 px-4 py-3 mb-4">
+                <p className="text-sm font-medium text-green-800 mb-1">
+                  Синхронізацію завершено
+                </p>
+                <div className="flex gap-4 text-sm text-green-700">
+                  <span>{driveSyncResult.added} додано</span>
+                  <span>{driveSyncResult.updated} оновлено</span>
+                  <span>{driveSyncResult.unchanged} без змін</span>
+                </div>
+                {driveSyncResult.errors.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {driveSyncResult.errors.map((err, i) => (
+                      <p key={i} className="text-xs text-red-600">
+                        {err}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* File preview list */}
+            {drivePreview && drivePreview.files.length > 0 && (
+              <div>
+                <p className="text-xs text-gray-400 mb-3">
+                  {drivePreview.fileCount} файл{drivePreview.fileCount === 1 ? "" : drivePreview.fileCount < 5 ? "и" : "ів"} у папці
+                </p>
+                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                  {drivePreview.files.map((file) => (
+                    <div
+                      key={file.id}
+                      className="flex items-center justify-between py-2 px-3 rounded-lg bg-gray-50 text-sm"
+                    >
+                      <span className="text-gray-700 truncate mr-3">
+                        {file.name}
+                      </span>
+                      <span
+                        className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                          file.status === "new"
+                            ? "bg-blue-100 text-blue-700"
+                            : file.status === "update"
+                              ? "bg-amber-100 text-amber-700"
+                              : "bg-gray-100 text-gray-500"
+                        }`}
+                      >
+                        {file.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {drivePreview && drivePreview.files.length === 0 && (
+              <p className="text-sm text-gray-400 text-center py-4">
+                Підтримувані файли не знайдено у налаштованій папці.
+              </p>
+            )}
+          </div>
+        </div>
       </main>
     </div>
   );

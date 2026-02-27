@@ -89,10 +89,10 @@ export default function CostDashboard() {
         <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link href="/admin" className="text-gray-500 hover:text-gray-700 text-sm">
-              ← Admin
+              ← Адмін
             </Link>
             <h1 className="text-xl font-semibold text-gray-900">
-              Cost Dashboard
+              Панель витрат
             </h1>
           </div>
         </div>
@@ -102,54 +102,54 @@ export default function CostDashboard() {
         {/* Summary cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <StatCard
-            label="Today's Cost"
+            label="Витрати сьогодні"
             value={`$${(today?.estimatedCost ?? 0).toFixed(4)}`}
-            sub={`${today?.queryCount ?? 0} queries`}
+            sub={`${today?.queryCount ?? 0} запитів`}
           />
           <StatCard
-            label="This Period Cost"
+            label="Витрати за період"
             value={`$${totals.cost.toFixed(3)}`}
-            sub={`${metrics.length} days`}
+            sub={`${metrics.length} днів`}
           />
           <StatCard
-            label="Cache Hit Rate"
+            label="Відсоток кешу"
             value={`${cacheHitRate}%`}
-            sub="target: >60%"
+            sub="ціль: >60%"
             highlight={cacheHitRate >= 60}
           />
           <StatCard
-            label="Avg Cost/Query"
+            label="Середня вартість/запит"
             value={`$${avgCostPerQuery.toFixed(5)}`}
-            sub={`${totals.queries} total queries`}
+            sub={`${totals.queries} запитів всього`}
           />
         </div>
 
         {/* Token breakdown */}
         <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-8">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            Token Usage Breakdown
+            Використання токенів
           </h2>
           <div className="grid grid-cols-3 gap-6 text-center">
             <div>
               <p className="text-2xl font-bold text-gray-900">
                 {(totals.inputTokens / 1000).toFixed(1)}k
               </p>
-              <p className="text-sm text-gray-500">Input tokens</p>
-              <p className="text-xs text-gray-400">billed at $0.25/1M</p>
+              <p className="text-sm text-gray-500">Вхідні токени</p>
+              <p className="text-xs text-gray-400">тариф $0.25/1M</p>
             </div>
             <div>
               <p className="text-2xl font-bold text-green-600">
                 {(totals.cacheRead / 1000).toFixed(1)}k
               </p>
-              <p className="text-sm text-gray-500">Cache read tokens</p>
-              <p className="text-xs text-gray-400">billed at $0.03/1M</p>
+              <p className="text-sm text-gray-500">Токени з кешу</p>
+              <p className="text-xs text-gray-400">тариф $0.03/1M</p>
             </div>
             <div>
               <p className="text-2xl font-bold text-gray-900">
                 {(totals.outputTokens / 1000).toFixed(1)}k
               </p>
-              <p className="text-sm text-gray-500">Output tokens</p>
-              <p className="text-xs text-gray-400">billed at $1.25/1M</p>
+              <p className="text-sm text-gray-500">Вихідні токени</p>
+              <p className="text-xs text-gray-400">тариф $1.25/1M</p>
             </div>
           </div>
         </div>
@@ -161,7 +161,7 @@ export default function CostDashboard() {
           </div>
         ) : metrics.length === 0 ? (
           <div className="text-center py-16 text-gray-500">
-            No usage data yet. Usage will appear here after the first chat.
+            Даних про використання ще немає. Вони з'являться після першого чату.
           </div>
         ) : (
           <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
@@ -169,19 +169,19 @@ export default function CostDashboard() {
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="text-left px-6 py-3 font-medium text-gray-600">
-                    Date
+                    Дата
                   </th>
                   <th className="text-right px-4 py-3 font-medium text-gray-600">
-                    Queries
+                    Запити
                   </th>
                   <th className="text-right px-4 py-3 font-medium text-gray-600">
-                    Cache Reads
+                    З кешу
                   </th>
                   <th className="text-right px-4 py-3 font-medium text-gray-600">
-                    Output Tokens
+                    Вихідні токени
                   </th>
                   <th className="text-right px-6 py-3 font-medium text-gray-600">
-                    Est. Cost
+                    Орієнт. вартість
                   </th>
                 </tr>
               </thead>

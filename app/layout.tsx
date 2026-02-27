@@ -3,8 +3,8 @@ import "./globals.css";
 import { Providers } from "@/components/Providers";
 
 export const metadata: Metadata = {
-  title: "Company AI Assistant",
-  description: "AI-powered internal assistant for your team",
+  title: "AI Асистент компанії",
+  description: "AI-помічник для вашої команди",
 };
 
 export default function RootLayout({
@@ -13,7 +13,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="uk">
       <body className="antialiased">
         <Providers>{children}</Providers>
       </body>
