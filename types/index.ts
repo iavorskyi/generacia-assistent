@@ -6,6 +6,8 @@ export type DocumentCategory =
   | "legal"
   | "general";
 
+export type DocumentSourceType = "file" | "web";
+
 export interface Document {
   id: string;
   filename: string;
@@ -19,6 +21,11 @@ export interface Document {
   lastUsed?: Date;
   driveFileId?: string;
   driveModifiedTime?: string;
+  // Web source fields
+  sourceType?: DocumentSourceType;
+  sourceUrl?: string;
+  lastFetched?: Date;
+  fetchError?: string;
 }
 
 export interface Message {

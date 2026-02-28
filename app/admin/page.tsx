@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { DocumentCategory } from "@/types";
 
 interface UploadResult {
   filename: string;
@@ -13,6 +14,26 @@ interface UploadResult {
   documentId: string;
   error?: string;
 }
+
+interface WebSource {
+  id: string;
+  filename: string;
+  sourceUrl: string;
+  category: DocumentCategory;
+  priority: number;
+  tokenCount: number;
+  lastFetched?: string;
+  fetchError?: string;
+}
+
+const CATEGORIES: DocumentCategory[] = [
+  "general",
+  "hr",
+  "engineering",
+  "policy",
+  "finance",
+  "legal",
+];
 
 interface DrivePreviewFile {
   id: string;
@@ -48,6 +69,37 @@ export default function AdminUploadPage() {
   const [drivePreview, setDrivePreview] = useState<DrivePreview | null>(null);
   const [driveSyncResult, setDriveSyncResult] = useState<DriveSyncResult | null>(null);
   const [driveError, setDriveError] = useState<string | null>(null);
+
+  // Web sources state
+  const [webSources, setWebSources] = useState<WebSource[]>([]);
+  const [loadingWebSources, setLoadingWebSources] = useState(true);
+  const [webUrl, setWebUrl] = useState("");
+  const [webCategory, setWebCategory] = useState<DocumentCategory>("general");
+  const [webPriority, setWebPriority] = useState(50);
+  const [crawlLinks, setCrawlLinks] = useState(true);
+  const [addingWebSource, setAddingWebSource] = useState(false);
+  const [webError, setWebError] = useState<string | null>(null);
+  const [refreshingId, setRefreshingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (session?.user?.isAdmin) {
+      fetchWebSources();
+    }
+  }, [session?.user?.isAdmin]);
+
+  const fetchWebSources = async () => {
+    try {
+      const res = await fetch("/api/admin/websites");
+      const data = await res.json();
+      if (res.ok) {
+        setWebSources(data.websites);
+      }
+    } catch {
+      console.error("Failed to fetch web sources");
+    } finally {
+      setLoadingWebSources(false);
+    }
+  };
 
   if (status === "loading") {
     return (
@@ -155,6 +207,78 @@ export default function AdminUploadPage() {
     } finally {
       setDriveSyncing(false);
     }
+  };
+
+  const handleAddWebSource = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!webUrl.trim()) return;
+
+    setAddingWebSource(true);
+    setWebError(null);
+
+    try {
+      const res = await fetch("/api/admin/websites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: webUrl.trim(),
+          category: webCategory,
+          priority: webPriority,
+          crawlLinks,
+        }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setWebError(data.error || "Не вдалося додати веб-джерело");
+      } else {
+        setWebUrl("");
+        setWebCategory("general");
+        setWebPriority(50);
+        fetchWebSources();
+      }
+    } catch {
+      setWebError("Помилка мережі");
+    } finally {
+      setAddingWebSource(false);
+    }
+  };
+
+  const handleRefreshWebSource = async (id: string) => {
+    setRefreshingId(id);
+
+    try {
+      const res = await fetch(`/api/admin/websites/${id}`, {
+        method: "POST",
+      });
+      await res.json();
+      fetchWebSources();
+    } catch {
+      console.error("Failed to refresh web source");
+    } finally {
+      setRefreshingId(null);
+    }
+  };
+
+  const handleDeleteWebSource = async (id: string) => {
+    if (!confirm("Ви впевнені, що хочете видалити це веб-джерело?")) return;
+
+    try {
+      const res = await fetch(`/api/admin/websites/${id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setWebSources((prev) => prev.filter((s) => s.id !== id));
+      }
+    } catch {
+      console.error("Failed to delete web source");
+    }
+  };
+
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return "Ніколи";
+    const date = new Date(dateString);
+    return date.toLocaleDateString() + " " + date.toLocaleTimeString();
   };
 
   return (
@@ -390,6 +514,171 @@ export default function AdminUploadPage() {
               <p className="text-sm text-gray-400 text-center py-4">
                 Підтримувані файли не знайдено у налаштованій папці.
               </p>
+            )}
+          </div>
+        </div>
+
+        {/* Web Sources Section */}
+        <div className="mt-10">
+          <div className="bg-white rounded-2xl border border-gray-200 p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center shrink-0">
+                <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">
+                  Веб-джерела
+                </h2>
+                <p className="text-sm text-gray-400">
+                  Додайте веб-сторінки як джерела для AI-асистента
+                </p>
+              </div>
+            </div>
+
+            {/* Add web source form */}
+            <form onSubmit={handleAddWebSource} className="mb-6">
+              <div className="grid gap-4 md:grid-cols-4">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    URL
+                  </label>
+                  <input
+                    type="url"
+                    value={webUrl}
+                    onChange={(e) => setWebUrl(e.target.value)}
+                    placeholder="https://example.com/page"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Категорія
+                  </label>
+                  <select
+                    value={webCategory}
+                    onChange={(e) => setWebCategory(e.target.value as DocumentCategory)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  >
+                    {CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Пріоритет (0-100)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={webPriority}
+                    onChange={(e) => setWebPriority(Number(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+              <div className="mt-4 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="crawlLinks"
+                  checked={crawlLinks}
+                  onChange={(e) => setCrawlLinks(e.target.checked)}
+                  className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                />
+                <label htmlFor="crawlLinks" className="text-sm text-gray-700">
+                  Сканувати всі сторінки сайту (до 20 сторінок)
+                </label>
+              </div>
+              {webError && (
+                <p className="mt-3 text-sm text-red-600">{webError}</p>
+              )}
+              <div className="mt-4">
+                <button
+                  type="submit"
+                  disabled={addingWebSource || !webUrl.trim()}
+                  className="bg-purple-600 text-white rounded-lg px-4 py-2 font-medium hover:bg-purple-700 disabled:opacity-50 transition-colors"
+                >
+                  {addingWebSource ? "Додавання..." : "Додати веб-джерело"}
+                </button>
+              </div>
+            </form>
+
+            {/* Web sources list */}
+            {loadingWebSources ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600" />
+              </div>
+            ) : webSources.length === 0 ? (
+              <p className="text-center text-gray-400 py-8">
+                Веб-джерела ще не додано
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {webSources.map((source) => (
+                  <div
+                    key={source.id}
+                    className={`rounded-xl border p-4 ${
+                      source.fetchError ? "border-red-200 bg-red-50" : "border-gray-200 bg-gray-50"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-900 truncate">
+                          {source.filename}
+                        </p>
+                        <a
+                          href={source.sourceUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm text-purple-600 hover:underline truncate block"
+                        >
+                          {source.sourceUrl}
+                        </a>
+                        <div className="flex flex-wrap gap-4 mt-2">
+                          <span className="text-xs text-gray-500 capitalize">
+                            Категорія: {source.category}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            Пріоритет: {source.priority}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            ~{source.tokenCount.toLocaleString()} токенів
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            Оновлено: {formatDate(source.lastFetched)}
+                          </span>
+                        </div>
+                        {source.fetchError && (
+                          <p className="text-sm text-red-600 mt-2">
+                            Помилка: {source.fetchError}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex gap-2 shrink-0">
+                        <button
+                          onClick={() => handleRefreshWebSource(source.id)}
+                          disabled={refreshingId === source.id}
+                          className="text-sm px-3 py-1.5 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-100 disabled:opacity-50 transition-colors"
+                        >
+                          {refreshingId === source.id ? "..." : "Оновити"}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteWebSource(source.id)}
+                          className="text-sm px-3 py-1.5 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+                        >
+                          Видалити
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </div>
