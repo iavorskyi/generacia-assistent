@@ -4,18 +4,15 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --foreground: #2c2c2c;
+  --brand-orange: #ff8319;
+  --brand-orange-hover: #e6730d;
+  --brand-dark: #2c2c2c;
+  --brand-bg: #f3f3f3;
+  --brand-border: #c7c7c7;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
 }

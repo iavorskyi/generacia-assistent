@@ -3,6 +3,9 @@
 import { useState, useRef, useEffect } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
 
+const LOGO_URL =
+  "https://generacia.energy/wp-content/themes/generacia/assets/img/logo.svg";
+
 interface Message {
   role: "user" | "assistant";
   content: string;
@@ -35,20 +38,22 @@ export default function Home() {
 
   if (status === "loading") {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+      <div className="flex items-center justify-center h-screen bg-[#f3f3f3]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#ff8319]" />
       </div>
     );
   }
 
   if (!session) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50">
+      <div className="flex items-center justify-center h-screen bg-[#f3f3f3]">
         <div className="bg-white rounded-2xl shadow-lg p-10 max-w-sm w-full text-center">
-          <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
-            <span className="text-white text-3xl font-bold">AI</span>
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">
+          <img
+            src={LOGO_URL}
+            alt="Generacia"
+            className="h-12 w-auto mx-auto mb-8"
+          />
+          <h1 className="text-2xl font-bold text-[#2c2c2c] mb-2">
             Асистент компанії
           </h1>
           <p className="text-gray-500 mb-8">
@@ -56,7 +61,7 @@ export default function Home() {
           </p>
           <button
             onClick={() => signIn("google")}
-            className="w-full flex items-center justify-center gap-3 bg-white border border-gray-300 rounded-lg px-6 py-3 text-gray-700 font-medium hover:bg-gray-50 transition-colors shadow-sm"
+            className="w-full flex items-center justify-center gap-3 bg-white border border-[#c7c7c7] rounded-lg px-6 py-3 text-[#2c2c2c] font-medium hover:bg-[#f3f3f3] transition-colors shadow-sm"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
               <path
@@ -163,10 +168,10 @@ export default function Home() {
     <div className="w-64 bg-gray-900 text-white flex flex-col h-full">
       <div className="p-4 border-b border-gray-700">
         <div className="flex items-center gap-2 mb-4">
-          <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center text-sm font-bold">
-            AI
+          <div className="bg-white rounded-lg p-1">
+            <img src={LOGO_URL} alt="Generacia" className="h-6 w-auto" />
           </div>
-          <span className="font-semibold">Асистент компанії</span>
+          <span className="font-semibold text-sm">Асистент</span>
         </div>
         <button
           onClick={startNewChat}
@@ -212,7 +217,7 @@ export default function Home() {
   );
 
   return (
-    <div className="flex bg-gray-50" style={{ height: "100dvh" }}>
+    <div className="flex bg-[#f3f3f3]" style={{ height: "100dvh" }}>
       {/* Sidebar — desktop */}
       <div className="hidden md:flex flex-col w-64 shrink-0">
         {sidebarContent}
@@ -234,7 +239,7 @@ export default function Home() {
       {/* Main chat area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Mobile header */}
-        <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-200">
+        <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-[#c7c7c7]">
           <button
             onClick={() => setSidebarOpen(true)}
             className="w-8 h-8 flex items-center justify-center text-gray-600 hover:text-gray-900"
@@ -243,12 +248,11 @@ export default function Home() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <div className="w-6 h-6 bg-blue-500 rounded-md flex items-center justify-center text-white text-xs font-bold">AI</div>
-          <span className="font-medium text-gray-800 text-sm">Асистент компанії</span>
+          <img src={LOGO_URL} alt="Generacia" className="h-7 w-auto" />
           <div className="flex-1" />
           <button
             onClick={startNewChat}
-            className="text-xs text-blue-600 font-medium"
+            className="text-xs text-[#ff8319] font-medium"
           >
             + Новий
           </button>
@@ -258,10 +262,12 @@ export default function Home() {
         <div className="flex-1 overflow-y-auto p-4 md:p-6">
           {messages.length === 0 ? (
             <div className="max-w-2xl mx-auto mt-16 text-center">
-              <div className="w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                <span className="text-blue-600 text-2xl font-bold">AI</span>
-              </div>
-              <h2 className="text-2xl font-semibold text-gray-800 mb-2">
+              <img
+                src={LOGO_URL}
+                alt="Generacia"
+                className="h-14 w-auto mx-auto mb-6"
+              />
+              <h2 className="text-2xl font-semibold text-[#2c2c2c] mb-2">
                 Чим я можу вам допомогти?
               </h2>
               <p className="text-gray-500 mb-8">
@@ -272,7 +278,7 @@ export default function Home() {
                   <button
                     key={q}
                     onClick={() => sendMessage(q)}
-                    className="text-left bg-white border border-gray-200 rounded-xl p-4 text-sm text-gray-600 hover:border-blue-300 hover:bg-blue-50 transition-colors shadow-sm"
+                    className="text-left bg-white border border-[#c7c7c7] rounded-xl p-4 text-sm text-gray-600 hover:border-[#ff8319] hover:bg-orange-50 transition-colors shadow-sm"
                   >
                     {q}
                   </button>
@@ -291,8 +297,8 @@ export default function Home() {
                   >
                     {msg.role === "assistant" && (
                       <div className="flex items-center gap-2 mb-1">
-                        <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center text-white text-xs font-bold">
-                          AI
+                        <div className="w-6 h-6 bg-[#ff8319] rounded-full flex items-center justify-center text-white text-xs font-bold">
+                          G
                         </div>
                         <span className="text-xs text-gray-400">
                           Асистент компанії
@@ -305,8 +311,8 @@ export default function Home() {
                     <div
                       className={`rounded-2xl px-4 py-3 ${
                         msg.role === "user"
-                          ? "bg-blue-600 text-white"
-                          : "bg-white border border-gray-200 text-gray-800 shadow-sm"
+                          ? "bg-[#ff8319] text-white"
+                          : "bg-white border border-[#c7c7c7] text-[#2c2c2c] shadow-sm"
                       }`}
                     >
                       <p className="whitespace-pre-wrap text-sm leading-relaxed">
@@ -318,7 +324,7 @@ export default function Home() {
                         {msg.citations.map((c) => (
                           <span
                             key={c}
-                            className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700 border border-blue-200"
+                            className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-orange-50 text-[#cc6b14] border border-[#ff8319]/30"
                           >
                             {c}
                           </span>
@@ -334,7 +340,7 @@ export default function Home() {
 
               {loading && (
                 <div className="flex justify-start">
-                  <div className="bg-white border border-gray-200 rounded-2xl px-4 py-3 shadow-sm">
+                  <div className="bg-white border border-[#c7c7c7] rounded-2xl px-4 py-3 shadow-sm">
                     <div className="flex gap-1">
                       <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
                       <div
@@ -355,9 +361,9 @@ export default function Home() {
         </div>
 
         {/* Input area */}
-        <div className="border-t border-gray-200 bg-white px-4 pt-3 pb-4" style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}>
+        <div className="border-t border-[#c7c7c7] bg-white px-4 pt-3 pb-4" style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}>
           <div className="max-w-3xl mx-auto">
-            <div className="flex gap-3 items-end bg-gray-50 border border-gray-300 rounded-2xl px-4 py-3 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
+            <div className="flex gap-3 items-end bg-[#f3f3f3] border border-[#c7c7c7] rounded-2xl px-4 py-3 focus-within:border-[#ff8319] focus-within:ring-2 focus-within:ring-[#ff8319]/10 transition-all">
               <textarea
                 ref={inputRef}
                 value={input}
@@ -365,14 +371,14 @@ export default function Home() {
                 onKeyDown={handleKeyDown}
                 placeholder="Задайте питання..."
                 rows={1}
-                className="flex-1 bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none resize-none max-h-32"
+                className="flex-1 bg-transparent text-sm text-[#2c2c2c] placeholder-gray-400 outline-none resize-none max-h-32"
                 style={{ minHeight: "24px" }}
                 disabled={loading}
               />
               <button
                 onClick={() => sendMessage(input)}
                 disabled={!input.trim() || loading}
-                className="shrink-0 w-8 h-8 flex items-center justify-center bg-blue-600 text-white rounded-xl disabled:opacity-40 hover:bg-blue-700 transition-colors"
+                className="shrink-0 w-8 h-8 flex items-center justify-center bg-[#ff8319] text-white rounded-xl disabled:opacity-40 hover:bg-[#e6730d] transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />

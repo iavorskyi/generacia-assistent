@@ -174,7 +174,7 @@ export default function AdminUploadPage() {
   if (status === "loading") {
     return (
       <div className="flex items-center justify-center h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#ff8319]" />
       </div>
     );
   }
@@ -353,10 +353,10 @@ export default function AdminUploadPage() {
             <h1 className="text-xl font-semibold text-gray-900">Джерела знань</h1>
           </div>
           <div className="flex items-center gap-4">
-            <Link href="/admin/documents" className="text-sm text-blue-600 hover:text-blue-700">
+            <Link href="/admin/documents" className="text-sm text-[#ff8319] hover:text-[#e6730d]">
               Документи
             </Link>
-            <Link href="/admin/costs" className="text-sm text-blue-600 hover:text-blue-700">
+            <Link href="/admin/costs" className="text-sm text-[#ff8319] hover:text-[#e6730d]">
               Витрати
             </Link>
           </div>
@@ -387,14 +387,14 @@ export default function AdminUploadPage() {
           <div>
             <div
               className={`border-2 border-dashed rounded-2xl p-12 text-center transition-colors ${
-                dragOver ? "border-blue-400 bg-blue-50" : "border-gray-300 bg-white hover:border-gray-400"
+                dragOver ? "border-[#ff8319] bg-orange-50" : "border-gray-300 bg-white hover:border-gray-400"
               }`}
               onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
               onDrop={handleDrop}
             >
-              <div className="w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="w-16 h-16 bg-orange-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-[#ff8319]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
               </div>
@@ -415,7 +415,7 @@ export default function AdminUploadPage() {
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
-                className="bg-blue-600 text-white rounded-xl px-6 py-2.5 font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                className="bg-[#ff8319] text-white rounded-xl px-6 py-2.5 font-medium hover:bg-[#e6730d] disabled:opacity-50 transition-colors"
               >
                 {uploading ? "Завантаження..." : "Вибрати файли"}
               </button>
@@ -512,7 +512,7 @@ export default function AdminUploadPage() {
                     <div key={file.id} className="flex items-center justify-between py-2 px-3 rounded-lg bg-gray-50 text-sm">
                       <span className="text-gray-700 truncate mr-3">{file.name}</span>
                       <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                        file.status === "new" ? "bg-blue-100 text-blue-700" : file.status === "update" ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-500"
+                        file.status === "new" ? "bg-orange-100 text-[#cc6b14]" : file.status === "update" ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-500"
                       }`}>
                         {file.status}
                       </span>
@@ -553,7 +553,7 @@ export default function AdminUploadPage() {
                     value={webUrl}
                     onChange={(e) => setWebUrl(e.target.value)}
                     placeholder="https://example.com/page"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ff8319] focus:border-transparent bg-white"
                     required
                   />
                 </div>
@@ -562,7 +562,7 @@ export default function AdminUploadPage() {
                   <select
                     value={webCategory}
                     onChange={(e) => setWebCategory(e.target.value as DocumentCategory)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ff8319] focus:border-transparent bg-white"
                   >
                     {CATEGORIES.map((cat) => (
                       <option key={cat} value={cat}>{cat.charAt(0).toUpperCase() + cat.slice(1)}</option>
@@ -577,7 +577,7 @@ export default function AdminUploadPage() {
                     max={100}
                     value={webPriority}
                     onChange={(e) => setWebPriority(Number(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ff8319] focus:border-transparent bg-white"
                   />
                 </div>
               </div>
@@ -587,7 +587,7 @@ export default function AdminUploadPage() {
                   id="crawlLinks"
                   checked={crawlLinks}
                   onChange={(e) => setCrawlLinks(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded"
+                  className="w-4 h-4 text-[#ff8319] border-gray-300 rounded accent-[#ff8319]"
                 />
                 <label htmlFor="crawlLinks" className="text-sm text-gray-700">
                   Сканувати всі сторінки сайту (до 20 сторінок)
@@ -598,7 +598,7 @@ export default function AdminUploadPage() {
                 <button
                   type="submit"
                   disabled={addingWebSource || !webUrl.trim()}
-                  className="bg-blue-600 text-white rounded-lg px-4 py-2 font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                  className="bg-[#ff8319] text-white rounded-lg px-4 py-2 font-medium hover:bg-[#e6730d] disabled:opacity-50 transition-colors"
                 >
                   {addingWebSource ? "Додавання..." : "Додати"}
                 </button>
@@ -607,7 +607,7 @@ export default function AdminUploadPage() {
 
             {loadingWebSources ? (
               <div className="flex items-center justify-center py-8">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" />
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#ff8319]" />
               </div>
             ) : webSources.length === 0 ? (
               <p className="text-center text-gray-400 py-8">Веб-джерела ще не додано</p>
@@ -621,7 +621,7 @@ export default function AdminUploadPage() {
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-gray-900 truncate">{source.filename}</p>
-                        <a href={source.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline truncate block">
+                        <a href={source.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-[#ff8319] hover:underline truncate block">
                           {source.sourceUrl}
                         </a>
                         <div className="flex flex-wrap gap-4 mt-2">
@@ -717,7 +717,7 @@ export default function AdminUploadPage() {
                         {page.title}
                       </a>
                       <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                        page.status === "new" ? "bg-blue-100 text-blue-700" : page.status === "update" ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-500"
+                        page.status === "new" ? "bg-orange-100 text-[#cc6b14]" : page.status === "update" ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-500"
                       }`}>
                         {page.status}
                       </span>
