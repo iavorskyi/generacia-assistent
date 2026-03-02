@@ -175,15 +175,36 @@ export async function selectDocuments(
     }
   }
 
-  // 3. Prioritize category matches for content selection
+  // 3. Build prioritized order for content selection:
+  //    filename keyword matches → category matches → rest by priority
   const queryCategory = detectQueryCategory(query);
+
+  // Find docs whose filename contains query words (min 3 chars)
+  const queryWords = query
+    .toLowerCase()
+    .split(/[\s,.()\[\]\/\\]+/)
+    .filter((w) => w.length >= 3);
+
+  const filenameMatches =
+    queryWords.length > 0
+      ? allMeta.filter((d) =>
+          queryWords.some((w) => d.filename.toLowerCase().includes(w))
+        )
+      : [];
+  const filenameMatchIds = new Set(filenameMatches.map((d) => d.id));
+
   const categoryMatches = queryCategory
-    ? allMeta.filter((d) => d.category === queryCategory)
+    ? allMeta.filter(
+        (d) => d.category === queryCategory && !filenameMatchIds.has(d.id)
+      )
     : [];
-  const otherDocs = allMeta.filter((d) =>
-    queryCategory ? d.category !== queryCategory : true
+  const categoryMatchIds = new Set(categoryMatches.map((d) => d.id));
+
+  const remaining = allMeta.filter(
+    (d) => !filenameMatchIds.has(d.id) && !categoryMatchIds.has(d.id)
   );
-  const orderedMeta = [...categoryMatches, ...otherDocs];
+
+  const orderedMeta = [...filenameMatches, ...categoryMatches, ...remaining];
 
   // 4. Select which docs fit within the token budget
   const selectedMeta: DocMeta[] = [];
