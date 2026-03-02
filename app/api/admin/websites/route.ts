@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
   try {
     const parsed = await fetchAndParseUrl(url, {
       crawlLinks: crawlLinks ?? false,
-      maxPages: maxPages ?? 20,
+      maxPages: maxPages ?? Infinity,
     });
 
     const docRef = await db.collection("documents").add({

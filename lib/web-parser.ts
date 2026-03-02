@@ -3,7 +3,6 @@ import * as cheerio from "cheerio";
 const USER_AGENT =
   "Mozilla/5.0 (compatible; GeneraciaBot/1.0; +https://generacia.com)";
 const FETCH_TIMEOUT = 30000; // 30s for PDFs
-const MAX_PAGES = 20; // Max pages to crawl per website
 const CRAWL_DELAY = 500; // Delay between requests in ms
 
 export interface ParsedWebContent {
@@ -147,7 +146,7 @@ export async function fetchAndParseUrl(
   url: string,
   options: CrawlOptions = {}
 ): Promise<ParsedWebContent> {
-  const { crawlLinks = false, maxPages = MAX_PAGES } = options;
+  const { crawlLinks = false, maxPages = Infinity } = options;
 
   // Validate URL
   const parsedUrl = new URL(url);
