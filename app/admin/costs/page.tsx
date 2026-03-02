@@ -161,7 +161,7 @@ export default function CostDashboard() {
           </div>
         ) : metrics.length === 0 ? (
           <div className="text-center py-16 text-gray-500">
-            Даних про використання ще немає. Вони з'являться після першого чату.
+            Даних про використання ще немає. Вони з&apos;являться після першого чату.
           </div>
         ) : (
           <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
