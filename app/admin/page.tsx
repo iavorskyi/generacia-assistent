@@ -590,7 +590,7 @@ export default function AdminUploadPage() {
                   className="w-4 h-4 text-[#ff8319] border-gray-300 rounded accent-[#ff8319]"
                 />
                 <label htmlFor="crawlLinks" className="text-sm text-gray-700">
-                  Сканувати всі сторінки сайту (до 20 сторінок)
+                  Сканувати всі сторінки сайту
                 </label>
               </div>
               {webError && <p className="mt-3 text-sm text-red-600">{webError}</p>}
