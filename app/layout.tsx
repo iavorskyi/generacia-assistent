@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/Providers";
 
+const inter = Inter({ subsets: ["latin", "cyrillic"] });
+
 export const metadata: Metadata = {
-  title: "AI Асистент компанії",
-  description: "AI-помічник для вашої команди",
+  title: "Generacia AI Асистент",
+  description: "AI-помічник для команди Generacia Energy",
 };
 
 export default function RootLayout({
@@ -14,7 +17,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="uk">
-      <body className="antialiased">
+      <body className={`antialiased ${inter.className}`}>
         <Providers>{children}</Providers>
       </body>
     </html>
