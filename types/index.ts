@@ -6,7 +6,7 @@ export type DocumentCategory =
   | "legal"
   | "general";
 
-export type DocumentSourceType = "file" | "web";
+export type DocumentSourceType = "file" | "web" | "notion";
 
 export interface Document {
   id: string;
@@ -26,6 +26,9 @@ export interface Document {
   sourceUrl?: string;
   lastFetched?: Date;
   fetchError?: string;
+  // Notion source fields
+  notionPageId?: string;
+  notionLastEdited?: string;
 }
 
 export interface Message {
