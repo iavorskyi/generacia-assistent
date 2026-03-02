@@ -73,6 +73,21 @@ export async function POST(request: NextRequest) {
 
   const cost = calculateCost(result.usage);
 
+  // Match citation names back to document IDs for the UI to open sources
+  type CitationMeta = { id: string; filename: string; driveFileId: string | null; sourceUrl: string | null };
+  const citationMeta: CitationMeta[] = result.citations
+    .map((citName) => {
+      const doc = documents.find((d) => {
+        const a = d.filename.toLowerCase();
+        const b = citName.toLowerCase();
+        return a === b || a.includes(b) || b.includes(a.replace(/\.[^.]+$/, ""));
+      });
+      if (!doc) return null;
+      const d = doc as typeof doc & { driveFileId?: string; sourceUrl?: string };
+      return { id: doc.id, filename: doc.filename, driveFileId: d.driveFileId ?? null, sourceUrl: d.sourceUrl ?? null };
+    })
+    .filter((m): m is CitationMeta => m !== null);
+
   // Build updated conversation
   const newMessages: ChatMessage[] = [
     ...conversationHistory,
@@ -105,6 +120,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     answer: result.answer,
     citations: result.citations,
+    citationMeta,
     conversationId: convRef.id,
     cacheStatus: result.cacheStatus,
     fromCache,
