@@ -139,7 +139,9 @@ export async function parseFile(
   }
 
   if (!content) {
-    throw new Error("Could not extract text from file");
+    // Scanned / image-only files — save with a placeholder so the file is
+    // marked as synced and won't be retried on every subsequent sync run.
+    content = `[Файл "${filename}" не містить тексту для розпізнавання. Можливо, це відскановане зображення або захищений PDF.]`;
   }
 
   const category = detectCategory(filename, content);
