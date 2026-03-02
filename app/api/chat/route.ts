@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Select relevant documents (with cache awareness)
-  const { documents, fromCache } = await selectDocuments(
+  const { documents, allDocumentNames, fromCache } = await selectDocuments(
     query,
     convRef.id === conversationId ? conversationId : null
   );
@@ -67,6 +67,7 @@ export async function POST(request: NextRequest) {
   const result = await chatWithCachedContext(
     query,
     documents,
+    allDocumentNames,
     conversationHistory
   );
 

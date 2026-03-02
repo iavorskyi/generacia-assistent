@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { SelectedDocument } from "@/lib/document-selector";
+import { SelectedDocument, DocMeta } from "@/lib/document-selector";
 import { TokenUsage } from "@/types";
 
 const client = new Anthropic({
@@ -15,6 +15,7 @@ const SYSTEM_PROMPT = `Ти — внутрішній AI-асистент для 
 4. Будь лаконічним та корисним
 5. Ніколи не вигадуй інформацію та не використовуй зовнішні знання для питань, специфічних для компанії
 6. Для загальних питань, не пов'язаних зі специфікою компанії (наприклад, "що таке Python?"), можеш відповідати звичайно
+7. Якщо запитують про список всіх документів або джерел — перелічуй файли з <document_catalog>, а не тільки ті, що є у <company_documents>
 
 Формат цитування: **Джерела: [Назва документа 1], [Назва документа 2]**`;
 
@@ -28,6 +29,12 @@ export interface ChatResult {
   citations: string[];
   usage: TokenUsage;
   cacheStatus: "hit" | "miss" | "created";
+}
+
+function formatDocumentCatalog(allDocs: DocMeta[]): string {
+  return allDocs
+    .map((d) => `- ${d.filename} (${d.category})`)
+    .join("\n");
 }
 
 function formatDocumentsForContext(documents: SelectedDocument[]): string {
@@ -54,19 +61,32 @@ function extractCitations(text: string): string[] {
 export async function chatWithCachedContext(
   query: string,
   documents: SelectedDocument[],
+  allDocumentNames: DocMeta[],
   conversationHistory: ChatMessage[]
 ): Promise<ChatResult> {
+  const catalog = formatDocumentCatalog(allDocumentNames);
   const documentContext = formatDocumentsForContext(documents);
+
+  const contextText =
+    `<document_catalog>\n` +
+    `Повний список усіх документів у базі знань (${allDocumentNames.length} файлів):\n` +
+    `${catalog}\n` +
+    `</document_catalog>\n\n` +
+    `<company_documents>\n` +
+    `${documentContext}\n` +
+    `</company_documents>\n\n` +
+    `Будь ласка, використовуй лише ці документи для відповіді на мої питання. ` +
+    `Якщо питання стосується переліку всіх джерел — використовуй <document_catalog>.`;
 
   // Build messages with cache_control on the document context
   const messages: Anthropic.MessageParam[] = [
-    // First message: cached document context
+    // First message: cached document context + catalog
     {
       role: "user",
       content: [
         {
           type: "text",
-          text: `<company_documents>\n${documentContext}\n</company_documents>\n\nБудь ласка, використовуй лише ці документи для відповіді на мої питання.`,
+          text: contextText,
           cache_control: { type: "ephemeral" },
         },
       ],

@@ -14,6 +14,14 @@ export interface SelectedDocument {
   tokenCount: number;
 }
 
+export interface DocMeta {
+  id: string;
+  filename: string;
+  category: string;
+  priority: number;
+  tokenCount: number;
+}
+
 // Detect query category from question keywords
 export function detectQueryCategory(query: string): DocumentCategory | null {
   const lower = query.toLowerCase();
@@ -113,13 +121,37 @@ function isCacheValid(cacheValidUntil?: Date | null): boolean {
   return new Date(cacheValidUntil).getTime() > Date.now();
 }
 
+export interface SelectDocumentsResult {
+  documents: SelectedDocument[];
+  allDocumentNames: DocMeta[];
+  fromCache: boolean;
+}
+
 export async function selectDocuments(
   query: string,
   conversationId?: string | null
-): Promise<{ documents: SelectedDocument[]; fromCache: boolean }> {
+): Promise<SelectDocumentsResult> {
   const db = getAdminDb();
 
-  // Check if conversation has a valid cache
+  // 1. Fetch metadata for ALL documents (no content field — lightweight)
+  const metaSnapshot = await db
+    .collection("documents")
+    .select("filename", "category", "priority", "tokenCount")
+    .orderBy("priority", "desc")
+    .get();
+
+  const allMeta: DocMeta[] = metaSnapshot.docs.map((d) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      filename: data.filename as string,
+      category: data.category as string,
+      priority: data.priority as number,
+      tokenCount: data.tokenCount as number,
+    };
+  });
+
+  // 2. Check if conversation has a valid cache
   if (conversationId) {
     const convDoc = await db
       .collection("conversations")
@@ -131,57 +163,49 @@ export async function selectDocuments(
       convData?.cachedDocumentIds?.length > 0 &&
       isCacheValid(convData?.cacheValidUntil?.toDate())
     ) {
-      // Reuse cached documents
       const cachedIds: string[] = convData?.cachedDocumentIds ?? [];
-      const docPromises = cachedIds.map((id) =>
-        db.collection("documents").doc(id).get()
+      const docDocs = await Promise.all(
+        cachedIds.map((id) => db.collection("documents").doc(id).get())
       );
-      const docDocs = await Promise.all(docPromises);
       const documents = docDocs
         .filter((d) => d.exists)
         .map((d) => ({ id: d.id, ...d.data() } as SelectedDocument));
 
-      return { documents, fromCache: true };
+      return { documents, allDocumentNames: allMeta, fromCache: true };
     }
   }
 
-  // Fresh document selection
+  // 3. Prioritize category matches for content selection
   const queryCategory = detectQueryCategory(query);
-
-  // Fetch documents ordered by priority
-  let queryRef = db
-    .collection("documents")
-    .orderBy("priority", "desc")
-    .limit(50);
-
-  const snapshot = await queryRef.get();
-  const allDocs = snapshot.docs.map(
-    (d) => ({ id: d.id, ...d.data() } as SelectedDocument)
-  );
-
-  // Prioritize category matches
   const categoryMatches = queryCategory
-    ? allDocs.filter((d) => d.category === queryCategory)
+    ? allMeta.filter((d) => d.category === queryCategory)
     : [];
-  const otherDocs = allDocs.filter((d) =>
+  const otherDocs = allMeta.filter((d) =>
     queryCategory ? d.category !== queryCategory : true
   );
+  const orderedMeta = [...categoryMatches, ...otherDocs];
 
-  const orderedDocs = [...categoryMatches, ...otherDocs];
-
-  // Select documents within token budget
-  const selected: SelectedDocument[] = [];
+  // 4. Select which docs fit within the token budget
+  const selectedMeta: DocMeta[] = [];
   let tokenTotal = 0;
 
-  for (const doc of orderedDocs) {
+  for (const doc of orderedMeta) {
     if (tokenTotal + doc.tokenCount <= MAX_TOKEN_BUDGET) {
-      selected.push(doc);
+      selectedMeta.push(doc);
       tokenTotal += doc.tokenCount;
     }
     if (tokenTotal >= MAX_TOKEN_BUDGET * 0.9) break; // leave 10% buffer
   }
 
-  // Update usage stats for selected documents
+  // 5. Fetch full content only for the selected docs
+  const fullDocs = await Promise.all(
+    selectedMeta.map((m) => db.collection("documents").doc(m.id).get())
+  );
+  const selected: SelectedDocument[] = fullDocs
+    .filter((d) => d.exists)
+    .map((d) => ({ id: d.id, ...d.data() } as SelectedDocument));
+
+  // 6. Update usage stats for selected documents (fire and forget)
   const batch = db.batch();
   for (const doc of selected) {
     const ref = db.collection("documents").doc(doc.id);
@@ -192,5 +216,5 @@ export async function selectDocuments(
   }
   await batch.commit().catch(() => {}); // non-critical
 
-  return { documents: selected, fromCache: false };
+  return { documents: selected, allDocumentNames: allMeta, fromCache: false };
 }
