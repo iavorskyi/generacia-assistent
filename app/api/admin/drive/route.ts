@@ -118,57 +118,50 @@ export async function POST() {
     const files = await listFilesInFolder(folderId);
     const db = getAdminDb();
 
-    // Process files in parallel batches to stay well within timeout
+    // Process files in parallel batches of 5 to stay well within timeout
     const CONCURRENCY = 5;
 
-    async function processFile(file: DriveFile) {
-      const existing = await getExistingDocByDriveId(file.id);
-
-      if (existing && existing.driveModifiedTime === file.modifiedTime) {
-        result.unchanged++;
-        return;
-      }
-
-      const buffer = await downloadFileAsBuffer(file.id, file.mimeType);
-      const filename = normalizeFilename(file);
-      const parsed = await parseFile(buffer, filename);
-
-      if (existing) {
-        await db.collection("documents").doc(existing.id).update({
-          filename,
-          content: parsed.content,
-          category: parsed.category,
-          priority: parsed.priority,
-          tokenCount: parsed.tokenCount,
-          driveModifiedTime: file.modifiedTime,
-          // Preserve: uploadedBy, uploadedAt, usageCount, lastUsed
-        });
-        result.updated++;
-      } else {
-        await db.collection("documents").add({
-          filename,
-          content: parsed.content,
-          category: parsed.category,
-          priority: parsed.priority,
-          tokenCount: parsed.tokenCount,
-          uploadedBy: "drive-sync",
-          uploadedAt: FieldValue.serverTimestamp(),
-          usageCount: 0,
-          lastUsed: null,
-          driveFileId: file.id,
-          driveModifiedTime: file.modifiedTime,
-        });
-        result.added++;
-      }
-    }
-
-    // Run in parallel batches of CONCURRENCY
     for (let i = 0; i < files.length; i += CONCURRENCY) {
-      const batch = files.slice(i, i + CONCURRENCY);
       await Promise.all(
-        batch.map(async (file) => {
+        files.slice(i, i + CONCURRENCY).map(async (file) => {
           try {
-            await processFile(file);
+            const existing = await getExistingDocByDriveId(file.id);
+
+            if (existing && existing.driveModifiedTime === file.modifiedTime) {
+              result.unchanged++;
+              return;
+            }
+
+            const buffer = await downloadFileAsBuffer(file.id, file.mimeType);
+            const filename = normalizeFilename(file);
+            const parsed = await parseFile(buffer, filename);
+
+            if (existing) {
+              await db.collection("documents").doc(existing.id).update({
+                filename,
+                content: parsed.content,
+                category: parsed.category,
+                priority: parsed.priority,
+                tokenCount: parsed.tokenCount,
+                driveModifiedTime: file.modifiedTime,
+              });
+              result.updated++;
+            } else {
+              await db.collection("documents").add({
+                filename,
+                content: parsed.content,
+                category: parsed.category,
+                priority: parsed.priority,
+                tokenCount: parsed.tokenCount,
+                uploadedBy: "drive-sync",
+                uploadedAt: FieldValue.serverTimestamp(),
+                usageCount: 0,
+                lastUsed: null,
+                driveFileId: file.id,
+                driveModifiedTime: file.modifiedTime,
+              });
+              result.added++;
+            }
           } catch (fileError) {
             const msg =
               fileError instanceof Error ? fileError.message : "Unknown error";
