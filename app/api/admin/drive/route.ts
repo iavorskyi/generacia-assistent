@@ -118,52 +118,64 @@ export async function POST() {
     const files = await listFilesInFolder(folderId);
     const db = getAdminDb();
 
-    // Process sequentially to avoid memory spikes from parallel large file downloads
-    for (const file of files) {
-      try {
-        const existing = await getExistingDocByDriveId(file.id);
+    // Process files in parallel batches to stay well within timeout
+    const CONCURRENCY = 5;
 
-        if (existing && existing.driveModifiedTime === file.modifiedTime) {
-          result.unchanged++;
-          continue;
-        }
+    async function processFile(file: DriveFile) {
+      const existing = await getExistingDocByDriveId(file.id);
 
-        const buffer = await downloadFileAsBuffer(file.id, file.mimeType);
-        const filename = normalizeFilename(file);
-        const parsed = await parseFile(buffer, filename);
-
-        if (existing) {
-          await db.collection("documents").doc(existing.id).update({
-            filename,
-            content: parsed.content,
-            category: parsed.category,
-            priority: parsed.priority,
-            tokenCount: parsed.tokenCount,
-            driveModifiedTime: file.modifiedTime,
-            // Preserve: uploadedBy, uploadedAt, usageCount, lastUsed
-          });
-          result.updated++;
-        } else {
-          await db.collection("documents").add({
-            filename,
-            content: parsed.content,
-            category: parsed.category,
-            priority: parsed.priority,
-            tokenCount: parsed.tokenCount,
-            uploadedBy: "drive-sync",
-            uploadedAt: FieldValue.serverTimestamp(),
-            usageCount: 0,
-            lastUsed: null,
-            driveFileId: file.id,
-            driveModifiedTime: file.modifiedTime,
-          });
-          result.added++;
-        }
-      } catch (fileError) {
-        const msg =
-          fileError instanceof Error ? fileError.message : "Unknown error";
-        result.errors.push(`${file.name}: ${msg}`);
+      if (existing && existing.driveModifiedTime === file.modifiedTime) {
+        result.unchanged++;
+        return;
       }
+
+      const buffer = await downloadFileAsBuffer(file.id, file.mimeType);
+      const filename = normalizeFilename(file);
+      const parsed = await parseFile(buffer, filename);
+
+      if (existing) {
+        await db.collection("documents").doc(existing.id).update({
+          filename,
+          content: parsed.content,
+          category: parsed.category,
+          priority: parsed.priority,
+          tokenCount: parsed.tokenCount,
+          driveModifiedTime: file.modifiedTime,
+          // Preserve: uploadedBy, uploadedAt, usageCount, lastUsed
+        });
+        result.updated++;
+      } else {
+        await db.collection("documents").add({
+          filename,
+          content: parsed.content,
+          category: parsed.category,
+          priority: parsed.priority,
+          tokenCount: parsed.tokenCount,
+          uploadedBy: "drive-sync",
+          uploadedAt: FieldValue.serverTimestamp(),
+          usageCount: 0,
+          lastUsed: null,
+          driveFileId: file.id,
+          driveModifiedTime: file.modifiedTime,
+        });
+        result.added++;
+      }
+    }
+
+    // Run in parallel batches of CONCURRENCY
+    for (let i = 0; i < files.length; i += CONCURRENCY) {
+      const batch = files.slice(i, i + CONCURRENCY);
+      await Promise.all(
+        batch.map(async (file) => {
+          try {
+            await processFile(file);
+          } catch (fileError) {
+            const msg =
+              fileError instanceof Error ? fileError.message : "Unknown error";
+            result.errors.push(`${file.name}: ${msg}`);
+          }
+        })
+      );
     }
 
     return NextResponse.json(result);
