@@ -14,7 +14,8 @@ import { FieldValue } from "firebase-admin/firestore";
 export const maxDuration = 60;
 
 function getFolderId(): string | null {
-  return process.env.GOOGLE_DRIVE_FOLDER_ID ?? null;
+  const id = process.env.GOOGLE_DRIVE_FOLDER_ID?.trim();
+  return id || null;
 }
 
 async function getExistingDocByDriveId(
