@@ -25,6 +25,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [cacheHint, setCacheHint] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -86,6 +87,7 @@ export default function Home() {
     setMessages([]);
     setConversationId(null);
     setCacheHint(false);
+    setSidebarOpen(false);
     inputRef.current?.focus();
   };
 
@@ -157,69 +159,103 @@ export default function Home() {
     }
   };
 
-  return (
-    <div className="flex h-screen bg-gray-50">
-      {/* Sidebar */}
-      <div className="w-64 bg-gray-900 text-white flex flex-col">
-        <div className="p-4 border-b border-gray-700">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center text-sm font-bold">
-              AI
-            </div>
-            <span className="font-semibold">Асистент компанії</span>
+  const sidebarContent = (
+    <div className="w-64 bg-gray-900 text-white flex flex-col h-full">
+      <div className="p-4 border-b border-gray-700">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center text-sm font-bold">
+            AI
           </div>
-          <button
-            onClick={startNewChat}
-            className="w-full bg-gray-700 hover:bg-gray-600 text-white rounded-lg px-3 py-2 text-sm text-left transition-colors"
-          >
-            + Новий чат
-          </button>
+          <span className="font-semibold">Асистент компанії</span>
         </div>
-
-        {/* Cache hint */}
-        {cacheHint && (
-          <div className="mx-3 mt-3 p-2 bg-green-900/40 border border-green-700 rounded-lg text-xs text-green-300">
-            Кеш активний — додаткові питання на 90% дешевші!
-          </div>
-        )}
-
-        <div className="flex-1" />
-
-        {/* User info + admin link */}
-        <div className="p-4 border-t border-gray-700">
-          {session.user.isAdmin && (
-            <a
-              href="/admin"
-              className="block w-full text-center bg-gray-700 hover:bg-gray-600 rounded-lg px-3 py-2 text-sm mb-3 transition-colors"
-            >
-              Панель адміністратора
-            </a>
-          )}
-          <div className="flex items-center gap-2 mb-2">
-            {session.user.image && (
-              <img
-                src={session.user.image}
-                alt=""
-                className="w-7 h-7 rounded-full"
-              />
-            )}
-            <span className="text-sm text-gray-300 truncate flex-1">
-              {session.user.email}
-            </span>
-          </div>
-          <button
-            onClick={() => signOut()}
-            className="w-full text-xs text-gray-400 hover:text-white transition-colors text-left"
-          >
-            Вийти
-          </button>
-        </div>
+        <button
+          onClick={startNewChat}
+          className="w-full bg-gray-700 hover:bg-gray-600 text-white rounded-lg px-3 py-2 text-sm text-left transition-colors"
+        >
+          + Новий чат
+        </button>
       </div>
 
+      {cacheHint && (
+        <div className="mx-3 mt-3 p-2 bg-green-900/40 border border-green-700 rounded-lg text-xs text-green-300">
+          Кеш активний — додаткові питання на 90% дешевші!
+        </div>
+      )}
+
+      <div className="flex-1" />
+
+      <div className="p-4 border-t border-gray-700">
+        {session.user.isAdmin && (
+          <a
+            href="/admin"
+            className="block w-full text-center bg-gray-700 hover:bg-gray-600 rounded-lg px-3 py-2 text-sm mb-3 transition-colors"
+          >
+            Панель адміністратора
+          </a>
+        )}
+        <div className="flex items-center gap-2 mb-2">
+          {session.user.image && (
+            <img src={session.user.image} alt="" className="w-7 h-7 rounded-full" />
+          )}
+          <span className="text-sm text-gray-300 truncate flex-1">
+            {session.user.email}
+          </span>
+        </div>
+        <button
+          onClick={() => signOut()}
+          className="w-full text-xs text-gray-400 hover:text-white transition-colors text-left"
+        >
+          Вийти
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="flex bg-gray-50" style={{ height: "100dvh" }}>
+      {/* Sidebar — desktop */}
+      <div className="hidden md:flex flex-col w-64 shrink-0">
+        {sidebarContent}
+      </div>
+
+      {/* Sidebar — mobile overlay */}
+      {sidebarOpen && (
+        <div className="md:hidden fixed inset-0 z-40 flex">
+          <div className="flex flex-col w-64 shrink-0 z-50">
+            {sidebarContent}
+          </div>
+          <div
+            className="flex-1 bg-black/50"
+            onClick={() => setSidebarOpen(false)}
+          />
+        </div>
+      )}
+
       {/* Main chat area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Mobile header */}
+        <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-200">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="w-8 h-8 flex items-center justify-center text-gray-600 hover:text-gray-900"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          <div className="w-6 h-6 bg-blue-500 rounded-md flex items-center justify-center text-white text-xs font-bold">AI</div>
+          <span className="font-medium text-gray-800 text-sm">Асистент компанії</span>
+          <div className="flex-1" />
+          <button
+            onClick={startNewChat}
+            className="text-xs text-blue-600 font-medium"
+          >
+            + Новий
+          </button>
+        </div>
+
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-4 md:p-6">
           {messages.length === 0 ? (
             <div className="max-w-2xl mx-auto mt-16 text-center">
               <div className="w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
@@ -319,7 +355,7 @@ export default function Home() {
         </div>
 
         {/* Input area */}
-        <div className="border-t border-gray-200 bg-white p-4">
+        <div className="border-t border-gray-200 bg-white px-4 pt-3 pb-4" style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}>
           <div className="max-w-3xl mx-auto">
             <div className="flex gap-3 items-end bg-gray-50 border border-gray-300 rounded-2xl px-4 py-3 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
               <textarea
@@ -327,7 +363,7 @@ export default function Home() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Задайте питання про політики компанії, пільги, процедури..."
+                placeholder="Задайте питання..."
                 rows={1}
                 className="flex-1 bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none resize-none max-h-32"
                 style={{ minHeight: "24px" }}
@@ -338,22 +374,12 @@ export default function Home() {
                 disabled={!input.trim() || loading}
                 className="shrink-0 w-8 h-8 flex items-center justify-center bg-blue-600 text-white rounded-xl disabled:opacity-40 hover:bg-blue-700 transition-colors"
               >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-                  />
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                 </svg>
               </button>
             </div>
-            <p className="text-xs text-gray-400 text-center mt-2">
+            <p className="hidden md:block text-xs text-gray-400 text-center mt-2">
               Відповіді базуються лише на документах компанії. Натисніть Enter для відправки.
             </p>
           </div>
