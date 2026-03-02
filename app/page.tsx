@@ -22,14 +22,6 @@ interface Message {
   timestamp: Date;
 }
 
-interface DocDrawer {
-  id: string;
-  filename: string;
-  driveFileId: string | null;
-  sourceUrl: string | null;
-  content?: string;
-  loading: boolean;
-}
 
 const SUGGESTED_QUESTIONS = [
   "Яка наша політика відпусток?",
@@ -46,7 +38,6 @@ export default function Home() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [cacheHint, setCacheHint] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [docDrawer, setDocDrawer] = useState<DocDrawer | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -183,22 +174,14 @@ export default function Home() {
     }
   };
 
-  const openDocDrawer = async (meta: CitationMeta) => {
-    setDocDrawer({ ...meta, loading: true });
-    try {
-      const res = await fetch(`/api/documents/${meta.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        setDocDrawer((prev) => prev ? { ...prev, content: data.content, loading: false } : null);
-      } else {
-        setDocDrawer((prev) => prev ? { ...prev, loading: false } : null);
-      }
-    } catch {
-      setDocDrawer((prev) => prev ? { ...prev, loading: false } : null);
-    }
+  const openSource = (meta: CitationMeta) => {
+    const url = meta.driveFileId
+      ? `https://drive.google.com/file/d/${meta.driveFileId}/view`
+      : meta.sourceUrl;
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
   };
 
-  const sidebarContent = (
+const sidebarContent = (
     <div className="w-64 bg-gray-900 text-white flex flex-col h-full">
       <div className="p-4 border-b border-gray-700">
         <div className="flex items-center gap-2 mb-4">
@@ -357,14 +340,16 @@ export default function Home() {
                       <div className="flex flex-wrap gap-1 mt-2">
                         {msg.citations.map((c) => {
                           const meta = msg.citationMeta?.find((m) => m.filename === c);
-                          return meta ? (
+                          const hasLink = meta && (meta.driveFileId || meta.sourceUrl);
+                          return hasLink ? (
                             <button
                               key={c}
-                              onClick={() => openDocDrawer(meta)}
+                              onClick={() => openSource(meta)}
+                              title="Відкрити у Google Drive"
                               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-orange-50 text-[#cc6b14] border border-[#ff8319]/30 hover:bg-orange-100 hover:border-[#ff8319]/60 transition-colors cursor-pointer"
                             >
                               <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                               </svg>
                               {c}
                             </button>
@@ -440,74 +425,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Document drawer */}
-      {docDrawer && (
-        <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black/30 z-40"
-            onClick={() => setDocDrawer(null)}
-          />
-          {/* Panel */}
-          <div className="fixed top-0 right-0 h-full w-full max-w-lg bg-white shadow-2xl z-50 flex flex-col">
-            {/* Header */}
-            <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-200 shrink-0">
-              <div className="flex-1 min-w-0">
-                <p className="text-xs text-gray-400 mb-0.5">Джерело</p>
-                <p className="font-medium text-[#2c2c2c] text-sm leading-snug break-all">
-                  {docDrawer.filename}
-                </p>
-              </div>
-              <button
-                onClick={() => setDocDrawer(null)}
-                className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Open original link */}
-            {(docDrawer.driveFileId || docDrawer.sourceUrl) && (
-              <div className="px-5 py-3 border-b border-gray-100 shrink-0">
-                <a
-                  href={
-                    docDrawer.driveFileId
-                      ? `https://drive.google.com/file/d/${docDrawer.driveFileId}/view`
-                      : docDrawer.sourceUrl!
-                  }
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-sm text-[#ff8319] hover:text-[#e6730d] font-medium transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                  </svg>
-                  Відкрити першоджерело
-                </a>
-              </div>
-            )}
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto px-5 py-4">
-              {docDrawer.loading ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#ff8319]" />
-                </div>
-              ) : docDrawer.content ? (
-                <pre className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed font-sans">
-                  {docDrawer.content}
-                </pre>
-              ) : (
-                <p className="text-sm text-gray-400 text-center py-12">
-                  Не вдалося завантажити вміст документа
-                </p>
-              )}
-            </div>
-          </div>
-        </>
-      )}
     </div>
   );
 }
