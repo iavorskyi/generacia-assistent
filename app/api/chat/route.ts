@@ -78,13 +78,22 @@ export async function POST(request: NextRequest) {
     : calculateCostClaude(result.usage);
 
   // Match citation names back to document IDs for the UI to open sources
+  // Normalize filenames: remove extension, collapse underscores/hyphens/spaces
+  const normalizeName = (s: string) =>
+    s.toLowerCase()
+      .replace(/\.[^.]+$/, "")       // strip extension
+      .replace(/[-_]+/g, " ")        // underscores/hyphens → space
+      .replace(/\s+/g, " ")          // collapse whitespace
+      .trim();
+
   type CitationMeta = { id: string; filename: string; driveFileId: string | null; sourceUrl: string | null; notionPageId: string | null };
   const citationMeta: CitationMeta[] = result.citations
     .map((citName) => {
+      const normCit = normalizeName(citName);
       const doc = documents.find((d) => {
-        const a = d.filename.toLowerCase();
-        const b = citName.toLowerCase();
-        return a === b || a.includes(b) || b.includes(a.replace(/\.[^.]+$/, ""));
+        const normFile = normalizeName(d.filename);
+        // Exact match after normalisation, or one contains the other
+        return normFile === normCit || normFile.includes(normCit) || normCit.includes(normFile);
       });
       if (!doc) return null;
       const d = doc as typeof doc & { driveFileId?: string; sourceUrl?: string; notionPageId?: string };
