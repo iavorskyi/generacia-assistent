@@ -20,11 +20,26 @@ const ALLOWED_USERS = process.env.TELEGRAM_ALLOWED_USERS
 async function sendMessage(chatId: number, text: string) {
   const chunks = splitMessage(text);
   for (const chunk of chunks) {
-    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+    // Try with Markdown first; fall back to plain text if Telegram rejects the formatting
+    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: chatId, text: chunk, parse_mode: "Markdown" }),
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      console.error(`[TG] sendMessage failed (${res.status}):`, JSON.stringify(err));
+      // Retry without parse_mode (plain text)
+      const res2 = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, text: chunk }),
+      });
+      if (!res2.ok) {
+        const err2 = await res2.json().catch(() => ({}));
+        console.error(`[TG] sendMessage plain also failed (${res2.status}):`, JSON.stringify(err2));
+      }
+    }
   }
 }
 
