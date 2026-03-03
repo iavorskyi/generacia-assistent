@@ -27,5 +27,7 @@ export function getAdminDb(): Firestore {
   if (adminDb) return adminDb;
   getAdminApp();
   adminDb = getFirestore();
+  // Use REST transport instead of gRPC — gRPC can time out in serverless environments
+  adminDb.settings({ preferRest: true });
   return adminDb;
 }
