@@ -154,6 +154,13 @@ export default function AdminUploadPage() {
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsSuccess, setSettingsSuccess] = useState(false);
 
+  // Telegram whitelist state
+  const [telegramUsers, setTelegramUsers] = useState<string[] | null>(null);
+  const [telegramUsersLoading, setTelegramUsersLoading] = useState(false);
+  const [telegramUserInput, setTelegramUserInput] = useState("");
+  const [telegramUsersSaving, setTelegramUsersSaving] = useState(false);
+  const [telegramUsersError, setTelegramUsersError] = useState<string | null>(null);
+
   // Notion state
   const [notionSyncing, setNotionSyncing] = useState(false);
   const [notionSyncProgress, setNotionSyncProgress] = useState<{ current: number; total: number } | null>(null);
@@ -180,8 +187,9 @@ export default function AdminUploadPage() {
   }, [session?.user?.isAdmin]);
 
   useEffect(() => {
-    if (activeTab === "settings" && session?.user?.isAdmin && aiProvider === null) {
-      loadSettings();
+    if (activeTab === "settings" && session?.user?.isAdmin) {
+      if (aiProvider === null) loadSettings();
+      if (telegramUsers === null) loadTelegramUsers();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, session?.user?.isAdmin]);
@@ -468,6 +476,58 @@ export default function AdminUploadPage() {
     } finally {
       setSettingsSaving(false);
     }
+  };
+
+  const loadTelegramUsers = async () => {
+    setTelegramUsersLoading(true);
+    setTelegramUsersError(null);
+    try {
+      const res = await fetch("/api/admin/settings/telegram");
+      const data = await res.json();
+      if (res.ok) setTelegramUsers(data.allowedUsers);
+      else setTelegramUsersError(data.error ?? "Не вдалося завантажити список");
+    } catch {
+      setTelegramUsersError("Помилка мережі");
+    } finally {
+      setTelegramUsersLoading(false);
+    }
+  };
+
+  const saveTelegramUsers = async (users: string[]) => {
+    setTelegramUsersSaving(true);
+    setTelegramUsersError(null);
+    try {
+      const res = await fetch("/api/admin/settings/telegram", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowedUsers: users }),
+      });
+      const data = await res.json();
+      if (res.ok) setTelegramUsers(data.allowedUsers);
+      else setTelegramUsersError(data.error ?? "Не вдалося зберегти");
+    } catch {
+      setTelegramUsersError("Помилка мережі");
+    } finally {
+      setTelegramUsersSaving(false);
+    }
+  };
+
+  const addTelegramUser = async () => {
+    const value = telegramUserInput.trim();
+    if (!value) return;
+    const current = telegramUsers ?? [];
+    const normalized = /^\d+$/.test(value) ? value : value.startsWith("@") ? value : `@${value}`;
+    if (current.includes(normalized)) {
+      setTelegramUserInput("");
+      return;
+    }
+    setTelegramUserInput("");
+    await saveTelegramUsers([...current, normalized]);
+  };
+
+  const removeTelegramUser = async (user: string) => {
+    const current = telegramUsers ?? [];
+    await saveTelegramUsers(current.filter((u) => u !== user));
   };
 
   const formatDate = (dateString?: string) => {
@@ -991,6 +1051,86 @@ export default function AdminUploadPage() {
                 </button>
               </div>
             )}
+
+            {/* Telegram whitelist */}
+            <div className="mt-8 pt-8 border-t border-gray-100">
+              <div className="mb-4">
+                <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+                  <svg className="w-4 h-4 text-[#229ED9]" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248l-2.01 9.47c-.148.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L6.166 14.77l-2.95-.924c-.64-.203-.654-.64.136-.948l11.52-4.44c.534-.194 1.001.13.69.79z"/>
+                  </svg>
+                  Telegram — дозволені користувачі
+                </h2>
+                <p className="text-sm text-gray-400 mt-0.5">
+                  Порожній список — бот доступний усім. Додайте @username або числовий ID.
+                </p>
+              </div>
+
+              {telegramUsersLoading && (
+                <div className="flex items-center justify-center py-6">
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#ff8319]" />
+                </div>
+              )}
+
+              {telegramUsersError && (
+                <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-4">
+                  {telegramUsersError}
+                </div>
+              )}
+
+              {telegramUsers !== null && (
+                <>
+                  {/* Add user input */}
+                  <div className="flex gap-2 mb-4">
+                    <input
+                      type="text"
+                      value={telegramUserInput}
+                      onChange={(e) => setTelegramUserInput(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && addTelegramUser()}
+                      placeholder="@username або 123456789"
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#ff8319] focus:border-transparent"
+                    />
+                    <button
+                      onClick={addTelegramUser}
+                      disabled={telegramUsersSaving || !telegramUserInput.trim()}
+                      className="px-4 py-2 bg-[#ff8319] text-white rounded-lg text-sm font-medium hover:bg-[#e6730d] disabled:opacity-50 transition-colors"
+                    >
+                      {telegramUsersSaving ? "..." : "Додати"}
+                    </button>
+                  </div>
+
+                  {/* Users list */}
+                  {telegramUsers.length === 0 ? (
+                    <div className="text-center py-6 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                      <p className="text-sm text-gray-400">Бот відкритий для всіх користувачів</p>
+                      <p className="text-xs text-gray-400 mt-1">Додайте користувачів вище, щоб обмежити доступ</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {telegramUsers.map((user) => (
+                        <div key={user} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg border border-gray-100">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full bg-[#229ED9] flex items-center justify-center text-white text-xs font-medium">
+                              {/^\d+$/.test(user) ? "#" : user[1]?.toUpperCase() ?? "?"}
+                            </div>
+                            <span className="text-sm text-gray-800 font-medium">{user}</span>
+                          </div>
+                          <button
+                            onClick={() => removeTelegramUser(user)}
+                            disabled={telegramUsersSaving}
+                            className="text-gray-400 hover:text-red-500 disabled:opacity-40 transition-colors p-1"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         )}
       </main>

@@ -11,9 +11,24 @@ export const maxDuration = 60;
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
 const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET ?? "";
-const ALLOWED_USERS = process.env.TELEGRAM_ALLOWED_USERS
-  ? process.env.TELEGRAM_ALLOWED_USERS.split(",").map((s) => s.trim())
+// Env var fallback (comma-separated). Firestore list takes priority when set.
+const ALLOWED_USERS_ENV = process.env.TELEGRAM_ALLOWED_USERS
+  ? process.env.TELEGRAM_ALLOWED_USERS.split(",").map((s) => s.trim()).filter(Boolean)
   : [];
+
+async function getAllowedUsers(): Promise<string[]> {
+  try {
+    const db = getAdminDb();
+    const doc = await db.collection("settings").doc("telegram").get();
+    const firestoreList: string[] = doc.data()?.allowedUsers ?? [];
+    // If Firestore list exists (even empty array means "open to all"),
+    // use it; otherwise fall back to env var.
+    if (doc.exists) return firestoreList;
+  } catch {
+    // Firestore unavailable — fall back to env var
+  }
+  return ALLOWED_USERS_ENV;
+}
 
 // ── Telegram API helpers ──────────────────────────────────────────────────────
 
@@ -139,11 +154,12 @@ async function handleMessage(message: {
 
   if (!text) return;
 
-  // 2. Access control (optional)
-  if (ALLOWED_USERS.length > 0 && telegramUserId) {
+  // 2. Access control — load list from Firestore (editable via admin UI)
+  const allowedUsers = await getAllowedUsers();
+  if (allowedUsers.length > 0 && telegramUserId) {
     const allowed =
-      ALLOWED_USERS.includes(String(telegramUserId)) ||
-      (message.from?.username && ALLOWED_USERS.includes(`@${message.from.username}`));
+      allowedUsers.includes(String(telegramUserId)) ||
+      (message.from?.username && allowedUsers.includes(`@${message.from.username}`));
     if (!allowed) {
       await sendMessage(chatId, "Вибачте, у вас немає доступу до цього бота. Зверніться до адміністратора.");
       return;
