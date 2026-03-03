@@ -197,19 +197,15 @@ async function handleMessage(message: {
   await sendTyping(chatId);
 
   try {
-    console.log(`[TG] chat=${chatId} text="${text.slice(0, 50)}"`);
-
     // 5. Load conversation history
     const convDoc = await convRef.get();
     const conversationHistory: ChatMessage[] = convDoc.data()?.messages ?? [];
-    console.log(`[TG] history=${conversationHistory.length} messages`);
 
     // 6. Select documents
     const { documents, allDocumentNames, fromCache } = await selectDocuments(
       text,
       String(chatId)
     );
-    console.log(`[TG] docs=${documents.length} fromCache=${fromCache}`);
 
     if (documents.length === 0) {
       await sendMessage(chatId, "Документи компанії недоступні. Зверніться до адміністратора.");
@@ -219,14 +215,12 @@ async function handleMessage(message: {
     // 7. Read active AI provider
     const settingsDoc = await db.collection("settings").doc("ai").get();
     const provider = (settingsDoc.data()?.provider as "claude" | "gemini") ?? "claude";
-    console.log(`[TG] provider=${provider}`);
 
     // 8. Call AI
     const result =
       provider === "gemini"
         ? await chatWithGemini(text, documents, allDocumentNames, conversationHistory)
         : await chatWithCachedContext(text, documents, allDocumentNames, conversationHistory);
-    console.log(`[TG] AI done, answer length=${result.answer.length}`);
 
     const cost =
       provider === "gemini"
@@ -235,7 +229,6 @@ async function handleMessage(message: {
 
     // 9. Format and send response
     const formatted = formatForTelegram(result.answer);
-    console.log(`[TG] sending response to chat=${chatId}`);
     await sendMessage(chatId, formatted);
 
     // 10. Save updated conversation
@@ -259,7 +252,7 @@ async function handleMessage(message: {
     // 11. Track usage metrics
     trackUsage(db, result.usage, cost).catch(console.error);
   } catch (error) {
-    console.error(`[TG] ERROR chat=${chatId}:`, error);
+    console.error("Telegram bot error:", error);
     const errMsg = error instanceof Error ? error.message : "Невідома помилка";
 
     let userMsg = "Вибачте, виникла помилка. Спробуйте ще раз.";
