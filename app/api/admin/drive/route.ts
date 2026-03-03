@@ -107,13 +107,15 @@ export async function POST(req: Request) {
     name = body.name;
     mimeType = body.mimeType;
     modifiedTime = body.modifiedTime;
-    if (!fileId || !name || !mimeType || !modifiedTime) {
+    if (!fileId || !name || !modifiedTime) {
       return NextResponse.json(
-        { error: "fileId, name, mimeType and modifiedTime are required" },
+        { error: "fileId, name and modifiedTime are required" },
         { status: 400 }
       );
     }
-  } catch {
+    mimeType = mimeType || "application/octet-stream";
+  } catch (e) {
+    console.error("Drive POST parse error:", e);
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
@@ -130,24 +132,40 @@ export async function POST(req: Request) {
     const filename = normalizeFilename(file);
     const parsed = await parseFile(buffer, filename);
 
+    // Firestore document limit is 1 MiB. Reserve ~100 KB for other fields.
+    const MAX_CONTENT_BYTES = 900_000;
+    let content = parsed.content;
+    let truncated = false;
+    if (Buffer.byteLength(content, "utf8") > MAX_CONTENT_BYTES) {
+      // Truncate to fit, cutting at a safe character boundary
+      content = Buffer.from(content, "utf8").slice(0, MAX_CONTENT_BYTES).toString("utf8");
+      content += "\n\n[Вміст обрізано через обмеження розміру]";
+      truncated = true;
+    }
+    const tokenCount = truncated
+      ? Math.round(MAX_CONTENT_BYTES / 4)
+      : parsed.tokenCount;
+
     if (existing) {
       await db.collection("documents").doc(existing.id).update({
         filename,
-        content: parsed.content,
+        content,
         category: parsed.category,
         priority: parsed.priority,
-        tokenCount: parsed.tokenCount,
+        tokenCount,
+        truncated,
         driveModifiedTime: modifiedTime,
         lastFetched: FieldValue.serverTimestamp(),
       });
-      return NextResponse.json({ status: "updated" });
+      return NextResponse.json({ status: "updated", truncated });
     } else {
       await db.collection("documents").add({
         filename,
-        content: parsed.content,
+        content,
         category: parsed.category,
         priority: parsed.priority,
-        tokenCount: parsed.tokenCount,
+        tokenCount,
+        truncated,
         uploadedBy: "drive-sync",
         uploadedAt: FieldValue.serverTimestamp(),
         usageCount: 0,
@@ -157,7 +175,7 @@ export async function POST(req: Request) {
         driveModifiedTime: modifiedTime,
         lastFetched: FieldValue.serverTimestamp(),
       });
-      return NextResponse.json({ status: "added" });
+      return NextResponse.json({ status: "added", truncated });
     }
   } catch (error) {
     console.error("Drive sync error:", error);
