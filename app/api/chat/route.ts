@@ -3,7 +3,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getAdminDb } from "@/lib/firebase-admin";
 import { selectDocuments } from "@/lib/document-selector";
-import { chatWithCachedContext, calculateCost, ChatMessage } from "@/lib/claude";
+import { chatWithCachedContext, calculateCost as calculateCostClaude, ChatMessage } from "@/lib/claude";
+import { chatWithContext as chatWithGemini, calculateCost as calculateCostGemini } from "@/lib/gemini";
 import { FieldValue } from "firebase-admin/firestore";
 
 export const maxDuration = 60;
@@ -63,18 +64,21 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Call Claude with prompt caching
-  const result = await chatWithCachedContext(
-    query,
-    documents,
-    allDocumentNames,
-    conversationHistory
-  );
+  // Read active AI provider from Firestore settings
+  const settingsDoc = await db.collection("settings").doc("ai").get();
+  const provider = (settingsDoc.data()?.provider as "claude" | "gemini") ?? "claude";
 
-  const cost = calculateCost(result.usage);
+  // Call the active AI provider
+  const result = provider === "gemini"
+    ? await chatWithGemini(query, documents, allDocumentNames, conversationHistory)
+    : await chatWithCachedContext(query, documents, allDocumentNames, conversationHistory);
+
+  const cost = provider === "gemini"
+    ? calculateCostGemini(result.usage)
+    : calculateCostClaude(result.usage);
 
   // Match citation names back to document IDs for the UI to open sources
-  type CitationMeta = { id: string; filename: string; driveFileId: string | null; sourceUrl: string | null };
+  type CitationMeta = { id: string; filename: string; driveFileId: string | null; sourceUrl: string | null; notionPageId: string | null };
   const citationMeta: CitationMeta[] = result.citations
     .map((citName) => {
       const doc = documents.find((d) => {
@@ -83,8 +87,9 @@ export async function POST(request: NextRequest) {
         return a === b || a.includes(b) || b.includes(a.replace(/\.[^.]+$/, ""));
       });
       if (!doc) return null;
-      const d = doc as typeof doc & { driveFileId?: string; sourceUrl?: string };
-      return { id: doc.id, filename: doc.filename, driveFileId: d.driveFileId ?? null, sourceUrl: d.sourceUrl ?? null };
+      const d = doc as typeof doc & { driveFileId?: string; sourceUrl?: string; notionPageId?: string };
+      // Use citName (what the AI wrote) as the key so the UI can match it to citations[]
+      return { id: doc.id, filename: citName, driveFileId: d.driveFileId ?? null, sourceUrl: d.sourceUrl ?? null, notionPageId: d.notionPageId ?? null };
     })
     .filter((m): m is CitationMeta => m !== null);
 
@@ -127,9 +132,37 @@ export async function POST(request: NextRequest) {
     documentsUsed: documents.length,
     usage: result.usage,
     cost,
+    provider,
   });
   } catch (error) {
     console.error("Chat API error:", error);
+
+    // Translate known API errors into friendly Ukrainian messages
+    if (error instanceof Error) {
+      const msg = error.message;
+
+      // Gemini quota / billing errors (429)
+      if (msg.includes("429") || msg.includes("Too Many Requests") || msg.includes("quota")) {
+        return NextResponse.json(
+          {
+            error:
+              "Gemini API: вичерпано ліміт запитів або не підключено білінг. " +
+              "Перейдіть на https://aistudio.google.com та увімкніть білінг для вашого проєкту, " +
+              "або переключіться на Claude в адмін-панелі (Налаштування → Claude Haiku).",
+          },
+          { status: 429 }
+        );
+      }
+
+      // Gemini auth errors (403)
+      if (msg.includes("403") || msg.includes("API key") || msg.includes("permission")) {
+        return NextResponse.json(
+          { error: "Gemini API: невірний або відсутній API-ключ. Перевірте GEMINI_API_KEY." },
+          { status: 403 }
+        );
+      }
+    }
+
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Внутрішня помилка сервера" },
       { status: 500 }
@@ -139,7 +172,7 @@ export async function POST(request: NextRequest) {
 
 async function trackUsage(
   db: ReturnType<typeof getAdminDb>,
-  usage: { input_tokens: number; cache_creation_input_tokens: number; cache_read_input_tokens: number; output_tokens: number },
+  usage: { input_tokens: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number; output_tokens: number },
   cost: number
 ) {
   const today = new Date().toISOString().split("T")[0];
@@ -150,8 +183,8 @@ async function trackUsage(
       date: today,
       queryCount: FieldValue.increment(1),
       inputTokens: FieldValue.increment(usage.input_tokens),
-      cacheCreationTokens: FieldValue.increment(usage.cache_creation_input_tokens),
-      cacheReadTokens: FieldValue.increment(usage.cache_read_input_tokens),
+      cacheCreationTokens: FieldValue.increment(usage.cache_creation_input_tokens ?? 0),
+      cacheReadTokens: FieldValue.increment(usage.cache_read_input_tokens ?? 0),
       outputTokens: FieldValue.increment(usage.output_tokens),
       estimatedCost: FieldValue.increment(cost),
     },

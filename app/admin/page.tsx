@@ -76,7 +76,7 @@ interface NotionSyncResult {
   errors: string[];
 }
 
-type Tab = "files" | "drive" | "web" | "notion";
+type Tab = "files" | "drive" | "web" | "notion" | "settings";
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   {
@@ -115,6 +115,16 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
       </svg>
     ),
   },
+  {
+    id: "settings",
+    label: "Налаштування",
+    icon: (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+      </svg>
+    ),
+  },
 ];
 
 export default function AdminUploadPage() {
@@ -135,8 +145,16 @@ export default function AdminUploadPage() {
   const [driveSyncResult, setDriveSyncResult] = useState<DriveSyncResult | null>(null);
   const [driveError, setDriveError] = useState<string | null>(null);
 
+  // Settings state
+  const [aiProvider, setAiProvider] = useState<"claude" | "gemini" | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [settingsSuccess, setSettingsSuccess] = useState(false);
+
   // Notion state
   const [notionSyncing, setNotionSyncing] = useState(false);
+  const [notionSyncProgress, setNotionSyncProgress] = useState<{ current: number; total: number } | null>(null);
   const [notionPreviewLoading, setNotionPreviewLoading] = useState(false);
   const [notionPreview, setNotionPreview] = useState<NotionPreview | null>(null);
   const [notionSyncResult, setNotionSyncResult] = useState<NotionSyncResult | null>(null);
@@ -158,6 +176,13 @@ export default function AdminUploadPage() {
       fetchWebSources();
     }
   }, [session?.user?.isAdmin]);
+
+  useEffect(() => {
+    if (activeTab === "settings" && session?.user?.isAdmin && aiProvider === null) {
+      loadSettings();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, session?.user?.isAdmin]);
 
   const fetchWebSources = async () => {
     try {
@@ -319,19 +344,91 @@ export default function AdminUploadPage() {
 
   const executeNotionSync = async () => {
     setNotionSyncing(true);
+    setNotionSyncProgress(null);
     setNotionError(null);
+    setNotionSyncResult(null);
+
     try {
-      const res = await fetch("/api/admin/notion", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) setNotionError(data.error ?? "Синхронізація Notion не вдалася");
-      else {
-        setNotionSyncResult(data);
-        await loadNotionPreview();
+      // Step 1: fetch the list of pages
+      const previewRes = await fetch("/api/admin/notion");
+      const previewData = await previewRes.json();
+      if (!previewRes.ok) {
+        setNotionError(previewData.error ?? "Не вдалося отримати сторінки Notion");
+        return;
       }
+      const pages: NotionPreviewPage[] = previewData.pages;
+
+      const result: NotionSyncResult = { added: 0, updated: 0, unchanged: 0, errors: [] };
+
+      // Step 2: sync each page individually
+      for (let i = 0; i < pages.length; i++) {
+        setNotionSyncProgress({ current: i + 1, total: pages.length });
+        const page = pages[i];
+        try {
+          const res = await fetch("/api/admin/notion", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pageId: page.id, title: page.title, lastEdited: page.lastEdited }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            result.errors.push(`${page.title}: ${data.error ?? "Unknown error"}`);
+          } else {
+            result[data.status as "added" | "updated" | "unchanged"]++;
+          }
+        } catch {
+          result.errors.push(`${page.title}: Помилка мережі`);
+        }
+      }
+
+      setNotionSyncResult(result);
+      setNotionPreview(previewData);
     } catch {
       setNotionError("Помилка мережі");
     } finally {
       setNotionSyncing(false);
+      setNotionSyncProgress(null);
+    }
+  };
+
+  const loadSettings = async () => {
+    setSettingsLoading(true);
+    setSettingsError(null);
+    try {
+      const res = await fetch("/api/admin/settings");
+      const data = await res.json();
+      if (res.ok) setAiProvider(data.provider);
+      else setSettingsError(data.error ?? "Не вдалося завантажити налаштування");
+    } catch {
+      setSettingsError("Помилка мережі");
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  const switchProvider = async (provider: "claude" | "gemini") => {
+    if (provider === aiProvider) return;
+    setSettingsSaving(true);
+    setSettingsError(null);
+    setSettingsSuccess(false);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAiProvider(data.provider);
+        setSettingsSuccess(true);
+        setTimeout(() => setSettingsSuccess(false), 3000);
+      } else {
+        setSettingsError(data.error ?? "Не вдалося зберегти налаштування");
+      }
+    } catch {
+      setSettingsError("Помилка мережі");
+    } finally {
+      setSettingsSaving(false);
     }
   };
 
@@ -676,7 +773,11 @@ export default function AdminUploadPage() {
                   disabled={notionSyncing || notionPreviewLoading}
                   className="bg-gray-900 text-white rounded-xl px-5 py-2 text-sm font-medium hover:bg-gray-700 disabled:opacity-50 transition-colors"
                 >
-                  {notionSyncing ? "Синхронізація..." : "Синхронізувати"}
+                  {notionSyncing
+                    ? notionSyncProgress
+                      ? `${notionSyncProgress.current}/${notionSyncProgress.total}...`
+                      : "Завантаження..."
+                    : "Синхронізувати"}
                 </button>
               </div>
             </div>
@@ -737,6 +838,101 @@ export default function AdminUploadPage() {
               <p className="text-sm text-gray-400 text-center py-8">
                 Натисніть «Переглянути» щоб побачити сторінки Notion, або «Синхронізувати» для негайного запуску.
               </p>
+            )}
+          </div>
+        )}
+
+        {/* Tab: Settings */}
+        {activeTab === "settings" && (
+          <div className="bg-white rounded-2xl border border-gray-200 p-6">
+            <div className="mb-6">
+              <h2 className="text-base font-semibold text-gray-900">AI Модель</h2>
+              <p className="text-sm text-gray-400 mt-0.5">Оберіть AI-провайдера для відповідей асистента</p>
+            </div>
+
+            {aiProvider === null && !settingsLoading && (
+              <div className="text-center py-8">
+                <button
+                  onClick={loadSettings}
+                  className="text-sm text-[#ff8319] hover:text-[#e6730d]"
+                >
+                  Завантажити налаштування
+                </button>
+              </div>
+            )}
+
+            {settingsLoading && (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#ff8319]" />
+              </div>
+            )}
+
+            {settingsError && (
+              <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-4">
+                {settingsError}
+              </div>
+            )}
+
+            {settingsSuccess && (
+              <div className="rounded-xl bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700 mb-4">
+                Налаштування збережено
+              </div>
+            )}
+
+            {aiProvider !== null && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Claude card */}
+                <button
+                  onClick={() => switchProvider("claude")}
+                  disabled={settingsSaving}
+                  className={`text-left p-5 rounded-xl border-2 transition-all disabled:opacity-50 ${
+                    aiProvider === "claude"
+                      ? "border-[#ff8319] bg-orange-50"
+                      : "border-gray-200 hover:border-gray-300 bg-white"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="font-semibold text-gray-900">Claude Haiku</span>
+                    {aiProvider === "claude" && (
+                      <span className="text-xs font-medium bg-[#ff8319] text-white px-2 py-0.5 rounded-full">
+                        Активний
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 mb-1">Anthropic</p>
+                  <div className="space-y-0.5 text-xs text-gray-400">
+                    <p>Вхідні: $0.25 / 1M токенів</p>
+                    <p>Вихідні: $1.25 / 1M токенів</p>
+                    <p className="text-green-600">+ Промпт-кешування</p>
+                  </div>
+                </button>
+
+                {/* Gemini card */}
+                <button
+                  onClick={() => switchProvider("gemini")}
+                  disabled={settingsSaving}
+                  className={`text-left p-5 rounded-xl border-2 transition-all disabled:opacity-50 ${
+                    aiProvider === "gemini"
+                      ? "border-blue-500 bg-blue-50"
+                      : "border-gray-200 hover:border-gray-300 bg-white"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="font-semibold text-gray-900">Gemini 2.5 Flash</span>
+                    {aiProvider === "gemini" && (
+                      <span className="text-xs font-medium bg-blue-500 text-white px-2 py-0.5 rounded-full">
+                        Активний
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 mb-1">Google</p>
+                  <div className="space-y-0.5 text-xs text-gray-400">
+                    <p>Вхідні: $0.15 / 1M токенів</p>
+                    <p>Вихідні: $0.60 / 1M токенів</p>
+                    <p className="text-blue-500">~2× дешевше на виході</p>
+                  </div>
+                </button>
+              </div>
             )}
           </div>
         )}

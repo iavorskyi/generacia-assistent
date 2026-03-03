@@ -111,12 +111,14 @@ export default function CostDashboard() {
             value={`$${totals.cost.toFixed(3)}`}
             sub={`${metrics.length} днів`}
           />
-          <StatCard
-            label="Відсоток кешу"
-            value={`${cacheHitRate}%`}
-            sub="ціль: >60%"
-            highlight={cacheHitRate >= 60}
-          />
+          {(totals.cacheRead > 0 || totals.cacheCreation > 0) && (
+            <StatCard
+              label="Відсоток кешу"
+              value={`${cacheHitRate}%`}
+              sub="ціль: >60%"
+              highlight={cacheHitRate >= 60}
+            />
+          )}
           <StatCard
             label="Середня вартість/запит"
             value={`$${avgCostPerQuery.toFixed(5)}`}
@@ -129,7 +131,7 @@ export default function CostDashboard() {
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
             Використання токенів
           </h2>
-          <div className="grid grid-cols-3 gap-6 text-center">
+          <div className={`grid gap-6 text-center ${totals.cacheRead > 0 || totals.cacheCreation > 0 ? "grid-cols-3" : "grid-cols-2"}`}>
             <div>
               <p className="text-2xl font-bold text-gray-900">
                 {(totals.inputTokens / 1000).toFixed(1)}k
@@ -137,13 +139,15 @@ export default function CostDashboard() {
               <p className="text-sm text-gray-500">Вхідні токени</p>
               <p className="text-xs text-gray-400">тариф $0.25/1M</p>
             </div>
-            <div>
-              <p className="text-2xl font-bold text-green-600">
-                {(totals.cacheRead / 1000).toFixed(1)}k
-              </p>
-              <p className="text-sm text-gray-500">Токени з кешу</p>
-              <p className="text-xs text-gray-400">тариф $0.03/1M</p>
-            </div>
+            {(totals.cacheRead > 0 || totals.cacheCreation > 0) && (
+              <div>
+                <p className="text-2xl font-bold text-green-600">
+                  {(totals.cacheRead / 1000).toFixed(1)}k
+                </p>
+                <p className="text-sm text-gray-500">Токени з кешу</p>
+                <p className="text-xs text-gray-400">тариф $0.03/1M</p>
+              </div>
+            )}
             <div>
               <p className="text-2xl font-bold text-gray-900">
                 {(totals.outputTokens / 1000).toFixed(1)}k

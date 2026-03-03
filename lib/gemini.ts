@@ -1,10 +1,8 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { SelectedDocument, DocMeta } from "@/lib/document-selector";
 import { TokenUsage } from "@/types";
 
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+const client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
 
 const SYSTEM_PROMPT = `Ти — внутрішній AI-асистент для працівників компанії. Твоя роль — відповідати на питання ЛИШЕ на основі наданих документів компанії.
 
@@ -32,9 +30,7 @@ export interface ChatResult {
 }
 
 function formatDocumentCatalog(allDocs: DocMeta[]): string {
-  return allDocs
-    .map((d) => `- ${d.filename} (${d.category})`)
-    .join("\n");
+  return allDocs.map((d) => `- ${d.filename} (${d.category})`).join("\n");
 }
 
 function formatDocumentsForContext(documents: SelectedDocument[]): string {
@@ -49,7 +45,6 @@ ${doc.content}
 }
 
 function extractCitations(text: string): string[] {
-  // Match both English "Sources" and Ukrainian "Джерела"
   const match = text.match(/\*\*(?:Sources?|Джерела?):\s*([^*]+)\*\*/i);
   if (!match) return [];
   return match[1]
@@ -58,7 +53,7 @@ function extractCitations(text: string): string[] {
     .filter(Boolean);
 }
 
-export async function chatWithCachedContext(
+export async function chatWithContext(
   query: string,
   documents: SelectedDocument[],
   allDocumentNames: DocMeta[],
@@ -78,82 +73,57 @@ export async function chatWithCachedContext(
     `Будь ласка, використовуй лише ці документи для відповіді на мої питання. ` +
     `Якщо питання стосується переліку всіх джерел — використовуй <document_catalog>.`;
 
-  // Build messages with cache_control on the document context
-  const messages: Anthropic.MessageParam[] = [
-    // First message: cached document context + catalog
-    {
-      role: "user",
-      content: [
-        {
-          type: "text",
-          text: contextText,
-          cache_control: { type: "ephemeral" },
-        },
-      ],
-    },
-    {
-      role: "assistant",
-      content:
-        "Зрозуміло. Я відповідатиму на ваші питання, використовуючи лише надані документи компанії.",
-    },
-    // Include conversation history (last 8 exchanges = 16 messages)
-    ...conversationHistory.slice(-16).map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: m.content,
-    })),
-    // Current question
-    {
-      role: "user",
-      content: query,
-    },
-  ];
-
-  const response = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 4096,
-    system: SYSTEM_PROMPT,
-    messages,
+  const model = client.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    systemInstruction: SYSTEM_PROMPT,
   });
 
-  const answer =
-    response.content[0].type === "text" ? response.content[0].text : "";
+  // Build Gemini history: first turn is context, then conversation history
+  // Gemini uses "model" instead of "assistant"
+  const history = [
+    {
+      role: "user" as const,
+      parts: [{ text: contextText }],
+    },
+    {
+      role: "model" as const,
+      parts: [{ text: "Зрозуміло. Я відповідатиму на ваші питання, використовуючи лише надані документи компанії." }],
+    },
+    ...conversationHistory.slice(-16).map((m) => ({
+      role: (m.role === "assistant" ? "model" : "user") as "user" | "model",
+      parts: [{ text: m.content }],
+    })),
+  ];
+
+  const chat = model.startChat({ history });
+  const result = await chat.sendMessage(query);
+  const answer = result.response.text();
   const citations = extractCitations(answer);
 
-  const usage = response.usage as unknown as {
-    input_tokens: number;
-    cache_creation_input_tokens?: number;
-    cache_read_input_tokens?: number;
-    output_tokens: number;
-  };
-
-  const cacheRead = (usage.cache_read_input_tokens ?? 0) > 0;
-  const cacheCreated = (usage.cache_creation_input_tokens ?? 0) > 0;
+  const usageMeta = result.response.usageMetadata;
+  const inputTokens = usageMeta?.promptTokenCount ?? 0;
+  const outputTokens = usageMeta?.candidatesTokenCount ?? 0;
 
   return {
     answer,
     citations,
     usage: {
-      input_tokens: usage.input_tokens,
-      output_tokens: usage.output_tokens,
-      cache_creation_input_tokens: usage.cache_creation_input_tokens ?? 0,
-      cache_read_input_tokens: usage.cache_read_input_tokens ?? 0,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
     },
-    cacheStatus: cacheRead ? "hit" : cacheCreated ? "created" : "miss",
+    cacheStatus: "miss",
   };
 }
 
-// Calculate cost in USD based on token usage
 export function calculateCost(usage: TokenUsage): number {
-  // Claude Haiku pricing (per 1M tokens)
-  const INPUT_COST = 0.25 / 1_000_000;
-  const CACHE_WRITE_COST = 0.3 / 1_000_000;
-  const CACHE_READ_COST = 0.03 / 1_000_000;
-  const OUTPUT_COST = 1.25 / 1_000_000;
+  // Gemini 2.5 Flash pricing (per 1M tokens, non-thinking mode)
+  const INPUT_COST = 0.15 / 1_000_000;
+  const OUTPUT_COST = 0.60 / 1_000_000;
 
   return (
     usage.input_tokens * INPUT_COST +
-    (usage.cache_creation_input_tokens ?? 0) * CACHE_WRITE_COST +
-    (usage.cache_read_input_tokens ?? 0) * CACHE_READ_COST +
     usage.output_tokens * OUTPUT_COST
   );
 }

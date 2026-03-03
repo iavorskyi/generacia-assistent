@@ -11,6 +11,7 @@ interface CitationMeta {
   filename: string;
   driveFileId: string | null;
   sourceUrl: string | null;
+  notionPageId: string | null;
 }
 
 interface Message {
@@ -38,6 +39,8 @@ export default function Home() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [cacheHint, setCacheHint] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState<{ filename: string; content: string } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -174,11 +177,34 @@ export default function Home() {
     }
   };
 
-  const openSource = (meta: CitationMeta) => {
-    const url = meta.driveFileId
-      ? `https://drive.google.com/file/d/${meta.driveFileId}/view`
-      : meta.sourceUrl;
-    if (url) window.open(url, "_blank", "noopener,noreferrer");
+  const openSource = async (meta: CitationMeta) => {
+    if (meta.driveFileId) {
+      window.open(`https://drive.google.com/file/d/${meta.driveFileId}/view`, "_blank", "noopener,noreferrer");
+    } else if (meta.sourceUrl) {
+      window.open(meta.sourceUrl, "_blank", "noopener,noreferrer");
+    } else if (meta.notionPageId) {
+      window.open(`https://www.notion.so/${meta.notionPageId.replace(/-/g, "")}`, "_blank", "noopener,noreferrer");
+    } else {
+      // Uploaded file — show content preview drawer
+      setPreviewDoc({ filename: meta.filename, content: "" });
+      setPreviewLoading(true);
+      try {
+        const res = await fetch(`/api/documents/${meta.id}`);
+        const data = await res.json();
+        setPreviewDoc({ filename: meta.filename, content: data.content || "" });
+      } catch {
+        setPreviewDoc({ filename: meta.filename, content: "Не вдалося завантажити вміст документа." });
+      } finally {
+        setPreviewLoading(false);
+      }
+    }
+  };
+
+  const citationLabel = (meta: CitationMeta): string => {
+    if (meta.driveFileId) return "Відкрити в Google Drive";
+    if (meta.sourceUrl) return "Відкрити посилання";
+    if (meta.notionPageId) return "Відкрити в Notion";
+    return "Переглянути документ";
   };
 
 const sidebarContent = (
@@ -340,17 +366,23 @@ const sidebarContent = (
                       <div className="flex flex-wrap gap-1 mt-2">
                         {msg.citations.map((c) => {
                           const meta = msg.citationMeta?.find((m) => m.filename === c);
-                          const hasLink = meta && (meta.driveFileId || meta.sourceUrl);
-                          return hasLink ? (
+                          const isExternal = meta && (meta.driveFileId || meta.sourceUrl || meta.notionPageId);
+                          return meta ? (
                             <button
                               key={c}
                               onClick={() => openSource(meta)}
-                              title="Відкрити у Google Drive"
+                              title={citationLabel(meta)}
                               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-orange-50 text-[#cc6b14] border border-[#ff8319]/30 hover:bg-orange-100 hover:border-[#ff8319]/60 transition-colors cursor-pointer"
                             >
-                              <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                              </svg>
+                              {isExternal ? (
+                                <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                              ) : (
+                                <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                              )}
                               {c}
                             </button>
                           ) : (
@@ -425,6 +457,44 @@ const sidebarContent = (
         </div>
       </div>
 
+      {/* Document preview drawer */}
+      {previewDoc && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div
+            className="flex-1 bg-black/30"
+            onClick={() => setPreviewDoc(null)}
+          />
+          <div className="w-full md:w-[480px] bg-white flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <svg className="w-4 h-4 text-[#ff8319] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <h3 className="text-sm font-semibold text-gray-900 truncate">{previewDoc.filename}</h3>
+              </div>
+              <button
+                onClick={() => setPreviewDoc(null)}
+                className="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 shrink-0 ml-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              {previewLoading ? (
+                <div className="flex items-center justify-center h-32">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#ff8319]" />
+                </div>
+              ) : (
+                <pre className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed font-sans">
+                  {previewDoc.content}
+                </pre>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
