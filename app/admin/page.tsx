@@ -38,6 +38,7 @@ const CATEGORIES: DocumentCategory[] = [
 interface DrivePreviewFile {
   id: string;
   name: string;
+  mimeType: string;
   modifiedTime: string;
   size: string;
   status: "new" | "update" | "unchanged";
@@ -140,6 +141,7 @@ export default function AdminUploadPage() {
 
   // Drive state
   const [driveSyncing, setDriveSyncing] = useState(false);
+  const [driveSyncProgress, setDriveSyncProgress] = useState<{ current: number; total: number } | null>(null);
   const [drivePreviewLoading, setDrivePreviewLoading] = useState(false);
   const [drivePreview, setDrivePreview] = useState<DrivePreview | null>(null);
   const [driveSyncResult, setDriveSyncResult] = useState<DriveSyncResult | null>(null);
@@ -262,19 +264,55 @@ export default function AdminUploadPage() {
 
   const executeDriveSync = async () => {
     setDriveSyncing(true);
+    setDriveSyncProgress(null);
     setDriveError(null);
+    setDriveSyncResult(null);
+
     try {
-      const res = await fetch("/api/admin/drive", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) setDriveError(data.error ?? "Синхронізація не вдалася");
-      else {
-        setDriveSyncResult(data);
-        await loadDrivePreview();
+      // Step 1: fetch the list of files
+      const previewRes = await fetch("/api/admin/drive");
+      const previewData = await previewRes.json();
+      if (!previewRes.ok) {
+        setDriveError(previewData.error ?? "Не вдалося отримати файли Drive");
+        return;
       }
+      const files: DrivePreviewFile[] = previewData.files;
+
+      const result: DriveSyncResult = { added: 0, updated: 0, unchanged: 0, errors: [] };
+
+      // Step 2: sync each file individually
+      for (let i = 0; i < files.length; i++) {
+        setDriveSyncProgress({ current: i + 1, total: files.length });
+        const file = files[i];
+        try {
+          const res = await fetch("/api/admin/drive", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              fileId: file.id,
+              name: file.name,
+              mimeType: file.mimeType,
+              modifiedTime: file.modifiedTime,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            result.errors.push(`${file.name}: ${data.error ?? "Unknown error"}`);
+          } else {
+            result[data.status as "added" | "updated" | "unchanged"]++;
+          }
+        } catch {
+          result.errors.push(`${file.name}: Помилка мережі`);
+        }
+      }
+
+      setDriveSyncResult(result);
+      setDrivePreview(previewData);
     } catch {
       setDriveError("Помилка мережі");
     } finally {
       setDriveSyncing(false);
+      setDriveSyncProgress(null);
     }
   };
 
@@ -570,10 +608,29 @@ export default function AdminUploadPage() {
                   disabled={driveSyncing || drivePreviewLoading}
                   className="bg-green-600 text-white rounded-xl px-5 py-2 text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors"
                 >
-                  {driveSyncing ? "Синхронізація..." : "Синхронізувати"}
+                  {driveSyncing
+                    ? driveSyncProgress
+                      ? `${driveSyncProgress.current}/${driveSyncProgress.total}...`
+                      : "Завантаження..."
+                    : "Синхронізувати"}
                 </button>
               </div>
             </div>
+
+            {driveSyncing && driveSyncProgress && (
+              <div className="mb-4">
+                <div className="flex justify-between text-xs text-gray-500 mb-1">
+                  <span>Синхронізація файлів...</span>
+                  <span>{driveSyncProgress.current} / {driveSyncProgress.total}</span>
+                </div>
+                <div className="w-full bg-gray-100 rounded-full h-1.5">
+                  <div
+                    className="bg-green-500 h-1.5 rounded-full transition-all duration-300"
+                    style={{ width: `${(driveSyncProgress.current / driveSyncProgress.total) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
 
             {driveError && (
               <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-4">
