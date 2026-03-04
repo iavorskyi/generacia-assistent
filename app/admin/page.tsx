@@ -192,9 +192,20 @@ function applySort<T>(
   rows: T[], sort: SortConfig
 ): T[] {
   return [...rows].sort((a, b) => {
-    const va = String((a as Record<string, unknown>)[sort.key] ?? "").toLowerCase();
-    const vb = String((b as Record<string, unknown>)[sort.key] ?? "").toLowerCase();
-    const cmp = va.localeCompare(vb, "uk");
+    const ra = (a as Record<string, unknown>)[sort.key] ?? "";
+    const rb = (b as Record<string, unknown>)[sort.key] ?? "";
+    let cmp: number;
+    if (typeof ra === "number" && typeof rb === "number") {
+      cmp = ra - rb;
+    } else {
+      const na = Number(ra);
+      const nb = Number(rb);
+      if (!isNaN(na) && !isNaN(nb) && String(ra).trim() !== "" && String(rb).trim() !== "") {
+        cmp = na - nb;
+      } else {
+        cmp = String(ra).toLowerCase().localeCompare(String(rb).toLowerCase(), "uk");
+      }
+    }
     return sort.dir === "asc" ? cmp : -cmp;
   });
 }
