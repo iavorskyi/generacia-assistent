@@ -88,6 +88,15 @@ interface NotionTableRow {
 
 interface SortConfig { key: string; dir: "asc" | "desc" }
 
+interface UserRecord {
+  id: string;
+  email: string;
+  displayName: string;
+  image: string | null;
+  isAdmin: boolean;
+  lastSignIn: string | null;
+}
+
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
 const CATEGORIES: DocumentCategory[] = [
@@ -290,6 +299,12 @@ export default function AdminPage() {
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsSuccess, setSettingsSuccess] = useState(false);
 
+  // ── Users ──
+  const [users, setUsers] = useState<UserRecord[] | null>(null);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersError, setUsersError] = useState<string | null>(null);
+  const [togglingUserId, setTogglingUserId] = useState<string | null>(null);
+
   // ── Telegram ──
   const [telegramUsers, setTelegramUsers] = useState<string[] | null>(null);
   const [telegramUsersLoading, setTelegramUsersLoading] = useState(false);
@@ -482,6 +497,7 @@ export default function AdminPage() {
     if (activeTab === "settings") {
       if (aiProvider === null) loadSettings();
       if (telegramUsers === null) loadTelegramUsers();
+      if (users === null) loadUsers();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, session?.user?.isAdmin]);
@@ -831,6 +847,39 @@ export default function AdminPage() {
   const removeTelegramUser = async (user: string) => {
     const current = telegramUsers ?? [];
     await saveTelegramUsers(current.filter(u => u !== user));
+  };
+
+  // ─── Users ───────────────────────────────────────────────────────────────────
+
+  const loadUsers = async () => {
+    setUsersLoading(true);
+    setUsersError(null);
+    try {
+      const res = await fetch("/api/admin/users");
+      const data = await res.json();
+      if (res.ok) setUsers(data.users);
+      else setUsersError(data.error ?? "Не вдалося завантажити користувачів");
+    } catch { setUsersError("Помилка мережі"); }
+    finally { setUsersLoading(false); }
+  };
+
+  const toggleAdmin = async (userId: string, makeAdmin: boolean) => {
+    setTogglingUserId(userId);
+    setUsersError(null);
+    try {
+      const res = await fetch(`/api/admin/users/${userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isAdmin: makeAdmin }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setUsers(prev => prev?.map(u => u.id === userId ? { ...u, isAdmin: makeAdmin } : u) ?? null);
+      } else {
+        setUsersError(data.error ?? "Помилка оновлення");
+      }
+    } catch { setUsersError("Помилка мережі"); }
+    finally { setTogglingUserId(null); }
   };
 
   // ─── Filter / Sort helpers ────────────────────────────────────────────────────
@@ -1719,6 +1768,82 @@ export default function AdminPage() {
                     </div>
                   )}
                 </>
+              )}
+            </div>
+
+            {/* Users & Admin Management */}
+            <div className="bg-white rounded-2xl border border-gray-200 p-6">
+              <div className="mb-4">
+                <h3 className="text-base font-semibold text-[#2c2c2c]">Користувачі</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  Керуйте правами адміністратора для зареєстрованих користувачів
+                </p>
+              </div>
+
+              {usersError && (
+                <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-4">
+                  {usersError}
+                </div>
+              )}
+
+              {usersLoading && (
+                <div className="flex justify-center py-6">
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#ff8319]" />
+                </div>
+              )}
+
+              {users !== null && !usersLoading && (
+                <div className="divide-y divide-gray-100">
+                  {users.length === 0 ? (
+                    <p className="text-sm text-gray-400 py-4">Немає зареєстрованих користувачів</p>
+                  ) : (
+                    users.map((user) => {
+                      const isSelf = user.id === session?.user?.id;
+                      const isToggling = togglingUserId === user.id;
+                      return (
+                        <div key={user.id} className="flex items-center gap-3 py-3">
+                          {user.image ? (
+                            <img src={user.image} alt="" className="w-8 h-8 rounded-full shrink-0" />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center shrink-0">
+                              <span className="text-xs font-medium text-gray-500">
+                                {(user.displayName || user.email).charAt(0).toUpperCase()}
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-[#2c2c2c] truncate">
+                              {user.displayName || user.email}
+                            </div>
+                            <div className="text-xs text-gray-400 truncate">{user.email}</div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {user.isAdmin && (
+                              <span className="text-xs bg-orange-100 text-[#ff8319] font-medium px-2 py-0.5 rounded-full">
+                                Адмін
+                              </span>
+                            )}
+                            {isSelf ? (
+                              <span className="text-xs text-gray-400 px-2">Це ви</span>
+                            ) : (
+                              <button
+                                onClick={() => toggleAdmin(user.id, !user.isAdmin)}
+                                disabled={isToggling}
+                                className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors disabled:opacity-50 ${
+                                  user.isAdmin
+                                    ? "bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-600"
+                                    : "bg-orange-50 text-[#ff8319] hover:bg-[#ff8319] hover:text-white"
+                                }`}
+                              >
+                                {isToggling ? "..." : user.isAdmin ? "Забрати права" : "Зробити адміном"}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
               )}
             </div>
           </div>
