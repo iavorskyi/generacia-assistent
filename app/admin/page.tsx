@@ -947,9 +947,9 @@ export default function AdminPage() {
       if (driveCatFilter && r.category !== driveCatFilter) return false;
       if (driveStatusFilter && r.status !== driveStatusFilter) return false;
       return true;
-    }) as Record<string, unknown>[],
+    }),
     driveSort
-  ) as unknown as DriveTableRow[];
+  );
 
   const filteredNotionRows = applySort(
     notionRows.filter(r => {
@@ -957,18 +957,18 @@ export default function AdminPage() {
       if (notionCatFilter && r.category !== notionCatFilter) return false;
       if (notionStatusFilter && r.status !== notionStatusFilter) return false;
       return true;
-    }) as Record<string, unknown>[],
+    }),
     notionSort
-  ) as unknown as NotionTableRow[];
+  );
 
   const filteredFileDocs = applySort(
     fileDocs.filter(r => {
       if (fileSearch && !r.filename.toLowerCase().includes(fileSearch.toLowerCase())) return false;
       if (fileCatFilter && r.category !== fileCatFilter) return false;
       return true;
-    }) as Record<string, unknown>[],
+    }),
     fileSort
-  ) as unknown as DocumentRow[];
+  );
 
   const filteredWebSources = applySort(
     webSources.filter(r => {
@@ -980,9 +980,9 @@ export default function AdminPage() {
         if (webStatusFilter === "ok" && hasError) return false;
       }
       return true;
-    }) as Record<string, unknown>[],
+    }),
     webSort
-  ) as unknown as WebSource[];
+  );
 
   // ─── Render ───────────────────────────────────────────────────────────────────
 
