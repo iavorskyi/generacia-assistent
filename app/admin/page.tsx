@@ -538,13 +538,13 @@ export default function AdminPage() {
   };
 
   const deleteFileSelected = async () => {
-    const ids = [...fileSelected];
+    const ids = Array.from(fileSelected);
     const ok = await bulkDelete(ids);
     if (ok) { setFileSelected(new Set()); await loadFilesTab(); }
   };
 
   const deleteWebSelected = async () => {
-    const ids = [...webSelected];
+    const ids = Array.from(webSelected);
     const ok = await bulkDelete(ids);
     if (ok) { setWebSelected(new Set()); await fetchWebSources(); }
   };
@@ -553,7 +553,7 @@ export default function AdminPage() {
 
   const syncDriveRowInternal = async (row: DriveTableRow): Promise<void> => {
     if (row.status === "orphaned" || !row.mimeType) return;
-    setDriveSyncingIds(prev => new Set([...prev, row.driveFileId]));
+    setDriveSyncingIds(prev => { const s = new Set(prev); s.add(row.driveFileId); return s; });
     try {
       await fetch("/api/admin/drive", {
         method: "POST",
@@ -605,7 +605,7 @@ export default function AdminPage() {
 
   const syncNotionRowInternal = async (row: NotionTableRow): Promise<void> => {
     if (row.status === "orphaned") return;
-    setNotionSyncingIds(prev => new Set([...prev, row.notionPageId]));
+    setNotionSyncingIds(prev => { const s = new Set(prev); s.add(row.notionPageId); return s; });
     try {
       await fetch("/api/admin/notion", {
         method: "POST",
