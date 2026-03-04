@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { SelectedDocument, DocMeta } from "@/lib/document-selector";
 import { TokenUsage } from "@/types";
+import { getSystemPrompt } from "@/lib/system-prompt";
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -108,10 +109,11 @@ export async function chatWithCachedContext(
     },
   ];
 
+  const systemPrompt = await getSystemPrompt();
   const response = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 4096,
-    system: SYSTEM_PROMPT,
+    system: systemPrompt,
     messages,
   });
 

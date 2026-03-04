@@ -271,6 +271,9 @@ export default function AdminPage() {
 
   // ── Settings ──
   const [aiProvider, setAiProvider] = useState<"claude" | "gemini" | null>(null);
+  const [systemPrompt, setSystemPrompt] = useState<string>("");
+  const [promptSaving, setPromptSaving] = useState(false);
+  const [promptSuccess, setPromptSuccess] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
@@ -728,10 +731,34 @@ export default function AdminPage() {
     try {
       const res = await fetch("/api/admin/settings");
       const data = await res.json();
-      if (res.ok) setAiProvider(data.provider);
-      else setSettingsError(data.error ?? "Не вдалося завантажити налаштування");
+      if (res.ok) {
+        setAiProvider(data.provider);
+        setSystemPrompt(data.systemPrompt ?? "");
+      } else {
+        setSettingsError(data.error ?? "Не вдалося завантажити налаштування");
+      }
     } catch { setSettingsError("Помилка мережі"); }
     finally { setSettingsLoading(false); }
+  };
+
+  const saveSystemPrompt = async () => {
+    setPromptSaving(true);
+    setSettingsError(null);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ systemPrompt }),
+      });
+      if (res.ok) {
+        setPromptSuccess(true);
+        setTimeout(() => setPromptSuccess(false), 3000);
+      } else {
+        const data = await res.json();
+        setSettingsError(data.error ?? "Не вдалося зберегти промпт");
+      }
+    } catch { setSettingsError("Помилка мережі"); }
+    finally { setPromptSaving(false); }
   };
 
   const switchProvider = async (provider: "claude" | "gemini") => {
@@ -1607,6 +1634,28 @@ export default function AdminPage() {
                 </button>
               </div>
             )}
+
+            {/* System prompt editor */}
+            <div className="mt-8 pt-8 border-t border-gray-100">
+              <div className="mb-3">
+                <h2 className="text-base font-semibold text-gray-900">Системний промпт</h2>
+                <p className="text-sm text-gray-400 mt-0.5">Інструкція для AI-асистента. Застосовується до обох провайдерів (Gemini і Claude).</p>
+              </div>
+              <textarea
+                value={systemPrompt}
+                onChange={e => setSystemPrompt(e.target.value)}
+                rows={18}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm font-mono text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#ff8319] focus:border-[#ff8319] resize-y"
+                placeholder="Введіть системний промпт..."
+              />
+              <div className="flex items-center gap-3 mt-3">
+                <button onClick={saveSystemPrompt} disabled={promptSaving || !systemPrompt.trim()}
+                  className="px-4 py-2 bg-[#ff8319] text-white rounded-lg text-sm font-medium hover:bg-[#e6730d] disabled:opacity-50 transition-colors">
+                  {promptSaving ? "Збереження..." : "Зберегти промпт"}
+                </button>
+                {promptSuccess && <span className="text-sm text-green-600">✓ Збережено</span>}
+              </div>
+            </div>
 
             {/* Telegram whitelist */}
             <div className="mt-8 pt-8 border-t border-gray-100">

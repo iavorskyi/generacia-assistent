@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { SelectedDocument, DocMeta } from "@/lib/document-selector";
 import { TokenUsage } from "@/types";
+import { getSystemPrompt } from "@/lib/system-prompt";
 
 const client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
 
@@ -100,9 +101,10 @@ export async function chatWithContext(
     `Будь ласка, використовуй лише ці документи для відповіді на мої питання. ` +
     `Якщо питання стосується переліку всіх джерел — використовуй <document_catalog>.`;
 
+  const systemPrompt = await getSystemPrompt();
   const model = client.getGenerativeModel({
     model: "gemini-2.5-flash",
-    systemInstruction: SYSTEM_PROMPT,
+    systemInstruction: systemPrompt,
   });
 
   // Build Gemini history: first turn is context, then conversation history
