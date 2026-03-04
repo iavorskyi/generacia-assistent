@@ -22,6 +22,23 @@ interface Message {
   timestamp: Date;
 }
 
+interface ConvSummary {
+  id: string;
+  title: string;
+  updatedAt: string | null;
+  messageCount: number;
+}
+
+function formatRelativeDate(iso: string | null): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  const now = new Date();
+  const diffDays = Math.floor((now.getTime() - date.getTime()) / 86400000);
+  if (diffDays === 0) return "Сьогодні";
+  if (diffDays === 1) return "Вчора";
+  if (diffDays < 7) return `${diffDays} дні тому`;
+  return date.toLocaleDateString("uk-UA", { day: "numeric", month: "short" });
+}
 
 const SUGGESTED_QUESTIONS = [
   "Яка наша політика відпусток?",
@@ -38,12 +55,34 @@ export default function Home() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [cacheHint, setCacheHint] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [conversations, setConversations] = useState<ConvSummary[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    const load = async () => {
+      setHistoryLoading(true);
+      try {
+        const res = await fetch("/api/conversations");
+        const data = await res.json();
+        if (!cancelled) setConversations(data.conversations ?? []);
+      } catch {
+        // ignore — history is non-critical
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
 
   if (status === "loading") {
     return (
@@ -105,6 +144,46 @@ export default function Home() {
     inputRef.current?.focus();
   };
 
+  const loadHistory = async () => {
+    try {
+      const res = await fetch("/api/conversations");
+      const data = await res.json();
+      setConversations(data.conversations ?? []);
+    } catch {
+      // ignore
+    }
+  };
+
+  const openConversation = async (id: string) => {
+    try {
+      const res = await fetch(`/api/conversations/${id}`);
+      const data = await res.json();
+      const conv = data.conversation;
+      const loaded: Message[] = (conv.messages ?? []).map(
+        (m: { role: "user" | "assistant"; content: string; citations?: string[]; citationMeta?: CitationMeta[] }) => ({
+          role: m.role,
+          content: m.content,
+          citations: m.citations ?? [],
+          citationMeta: m.citationMeta ?? [],
+          timestamp: new Date(),
+        })
+      );
+      setMessages(loaded);
+      setConversationId(id);
+      setCacheHint(false);
+      setSidebarOpen(false);
+    } catch {
+      // ignore
+    }
+  };
+
+  const deleteConversation = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    await fetch(`/api/conversations/${id}`, { method: "DELETE" });
+    setConversations((prev) => prev.filter((c) => c.id !== id));
+    if (conversationId === id) startNewChat();
+  };
+
   const sendMessage = async (query: string) => {
     if (!query.trim() || loading) return;
 
@@ -142,8 +221,10 @@ export default function Home() {
         throw new Error(data.error || "Не вдалося отримати відповідь");
       }
 
+      const isFirstMessage = !conversationId;
       setConversationId(data.conversationId);
       setCacheHint(data.cacheStatus === "created" || data.cacheStatus === "hit");
+      if (isFirstMessage) loadHistory();
 
       const assistantMessage: Message = {
         role: "assistant",
@@ -204,7 +285,40 @@ const sidebarContent = (
         </div>
       )}
 
-      <div className="flex-1" />
+      {/* Chat history */}
+      <div className="flex-1 overflow-y-auto mt-2 px-2">
+        {historyLoading ? (
+          <div className="text-xs text-gray-500 px-2 py-3">Завантаження...</div>
+        ) : conversations.length === 0 ? (
+          <div className="text-xs text-gray-600 px-2 py-3">Немає попередніх розмов</div>
+        ) : (
+          conversations.map((conv) => (
+            <div
+              key={conv.id}
+              onClick={() => openConversation(conv.id)}
+              className={`group flex items-start justify-between px-2 py-2 rounded-lg cursor-pointer text-sm mb-0.5 transition-colors ${
+                conversationId === conv.id
+                  ? "bg-gray-700 text-white"
+                  : "text-gray-300 hover:bg-gray-800"
+              }`}
+            >
+              <div className="flex-1 min-w-0">
+                <div className="truncate text-xs font-medium leading-snug">{conv.title}</div>
+                <div className="text-xs text-gray-500 mt-0.5">{formatRelativeDate(conv.updatedAt)}</div>
+              </div>
+              <button
+                onClick={(e) => deleteConversation(conv.id, e)}
+                className="opacity-0 group-hover:opacity-100 ml-1 mt-0.5 text-gray-500 hover:text-red-400 p-0.5 transition-opacity shrink-0"
+                title="Видалити розмову"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          ))
+        )}
+      </div>
 
       <div className="p-4 border-t border-gray-700">
         {session.user.isAdmin && (
