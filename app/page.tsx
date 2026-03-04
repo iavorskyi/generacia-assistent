@@ -11,7 +11,6 @@ interface CitationMeta {
   filename: string;
   driveFileId: string | null;
   sourceUrl: string | null;
-  notionPageId: string | null;
 }
 
 interface Message {
@@ -23,12 +22,31 @@ interface Message {
   timestamp: Date;
 }
 
+interface ConvSummary {
+  id: string;
+  title: string;
+  updatedAt: string | null;
+  messageCount: number;
+}
+
+function formatRelativeDate(iso: string | null): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  const now = new Date();
+  const diffDays = Math.floor((now.getTime() - date.getTime()) / 86400000);
+  if (diffDays === 0) return "Сьогодні";
+  if (diffDays === 1) return "Вчора";
+  if (diffDays < 7) return `${diffDays} дні тому`;
+  return date.toLocaleDateString("uk-UA", { day: "numeric", month: "short" });
+}
 
 const SUGGESTED_QUESTIONS = [
-  "Яка наша політика відпусток?",
-  "Як подати звіт про витрати?",
-  "Які процедури деплою в інженерії?",
-  "Де знайти довідник працівника?",
+  "Як оформити щорічну відпустку і скільки днів мені належить?",
+  "Яка процедура відшкодування витрат у відрядженні?",
+  "Які вимоги до інформаційної безпеки та паролів?",
+  "Як відбувається онбординг нового співробітника?",
+  "Де знайти шаблон договору або NDA з контрагентом?",
+  "Яка процедура закупівлі обладнання або послуг?",
 ];
 
 export default function Home() {
@@ -39,14 +57,34 @@ export default function Home() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [cacheHint, setCacheHint] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [previewDoc, setPreviewDoc] = useState<{ filename: string; content: string } | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
+  const [conversations, setConversations] = useState<ConvSummary[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    const load = async () => {
+      setHistoryLoading(true);
+      try {
+        const res = await fetch("/api/conversations");
+        const data = await res.json();
+        if (!cancelled) setConversations(data.conversations ?? []);
+      } catch {
+        // ignore — history is non-critical
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
 
   if (status === "loading") {
     return (
@@ -108,6 +146,46 @@ export default function Home() {
     inputRef.current?.focus();
   };
 
+  const loadHistory = async () => {
+    try {
+      const res = await fetch("/api/conversations");
+      const data = await res.json();
+      setConversations(data.conversations ?? []);
+    } catch {
+      // ignore
+    }
+  };
+
+  const openConversation = async (id: string) => {
+    try {
+      const res = await fetch(`/api/conversations/${id}`);
+      const data = await res.json();
+      const conv = data.conversation;
+      const loaded: Message[] = (conv.messages ?? []).map(
+        (m: { role: "user" | "assistant"; content: string; citations?: string[]; citationMeta?: CitationMeta[] }) => ({
+          role: m.role,
+          content: m.content,
+          citations: m.citations ?? [],
+          citationMeta: m.citationMeta ?? [],
+          timestamp: new Date(),
+        })
+      );
+      setMessages(loaded);
+      setConversationId(id);
+      setCacheHint(false);
+      setSidebarOpen(false);
+    } catch {
+      // ignore
+    }
+  };
+
+  const deleteConversation = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    await fetch(`/api/conversations/${id}`, { method: "DELETE" });
+    setConversations((prev) => prev.filter((c) => c.id !== id));
+    if (conversationId === id) startNewChat();
+  };
+
   const sendMessage = async (query: string) => {
     if (!query.trim() || loading) return;
 
@@ -145,8 +223,10 @@ export default function Home() {
         throw new Error(data.error || "Не вдалося отримати відповідь");
       }
 
+      const isFirstMessage = !conversationId;
       setConversationId(data.conversationId);
       setCacheHint(data.cacheStatus === "created" || data.cacheStatus === "hit");
+      if (isFirstMessage) loadHistory();
 
       const assistantMessage: Message = {
         role: "assistant",
@@ -177,34 +257,11 @@ export default function Home() {
     }
   };
 
-  const openSource = async (meta: CitationMeta) => {
-    if (meta.driveFileId) {
-      window.open(`https://drive.google.com/file/d/${meta.driveFileId}/view`, "_blank", "noopener,noreferrer");
-    } else if (meta.sourceUrl) {
-      window.open(meta.sourceUrl, "_blank", "noopener,noreferrer");
-    } else if (meta.notionPageId) {
-      window.open(`https://www.notion.so/${meta.notionPageId.replace(/-/g, "")}`, "_blank", "noopener,noreferrer");
-    } else {
-      // Uploaded file — show content preview drawer
-      setPreviewDoc({ filename: meta.filename, content: "" });
-      setPreviewLoading(true);
-      try {
-        const res = await fetch(`/api/documents/${meta.id}`);
-        const data = await res.json();
-        setPreviewDoc({ filename: meta.filename, content: data.content || "" });
-      } catch {
-        setPreviewDoc({ filename: meta.filename, content: "Не вдалося завантажити вміст документа." });
-      } finally {
-        setPreviewLoading(false);
-      }
-    }
-  };
-
-  const citationLabel = (meta: CitationMeta): string => {
-    if (meta.driveFileId) return "Відкрити в Google Drive";
-    if (meta.sourceUrl) return "Відкрити посилання";
-    if (meta.notionPageId) return "Відкрити в Notion";
-    return "Переглянути документ";
+  const openSource = (meta: CitationMeta) => {
+    const url = meta.driveFileId
+      ? `https://drive.google.com/file/d/${meta.driveFileId}/view`
+      : meta.sourceUrl;
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
   };
 
 const sidebarContent = (
@@ -230,7 +287,40 @@ const sidebarContent = (
         </div>
       )}
 
-      <div className="flex-1" />
+      {/* Chat history */}
+      <div className="flex-1 overflow-y-auto mt-2 px-2">
+        {historyLoading ? (
+          <div className="text-xs text-gray-500 px-2 py-3">Завантаження...</div>
+        ) : conversations.length === 0 ? (
+          <div className="text-xs text-gray-600 px-2 py-3">Немає попередніх розмов</div>
+        ) : (
+          conversations.map((conv) => (
+            <div
+              key={conv.id}
+              onClick={() => openConversation(conv.id)}
+              className={`group flex items-start justify-between px-2 py-2 rounded-lg cursor-pointer text-sm mb-0.5 transition-colors ${
+                conversationId === conv.id
+                  ? "bg-gray-700 text-white"
+                  : "text-gray-300 hover:bg-gray-800"
+              }`}
+            >
+              <div className="flex-1 min-w-0">
+                <div className="truncate text-xs font-medium leading-snug">{conv.title}</div>
+                <div className="text-xs text-gray-500 mt-0.5">{formatRelativeDate(conv.updatedAt)}</div>
+              </div>
+              <button
+                onClick={(e) => deleteConversation(conv.id, e)}
+                className="opacity-0 group-hover:opacity-100 ml-1 mt-0.5 text-gray-500 hover:text-red-400 p-0.5 transition-opacity shrink-0"
+                title="Видалити розмову"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          ))
+        )}
+      </div>
 
       <div className="p-4 border-t border-gray-700">
         {session.user.isAdmin && (
@@ -316,7 +406,7 @@ const sidebarContent = (
               <p className="text-gray-500 mb-8">
                 Запитайте мене про політики компанії, процедури та документацію.
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {SUGGESTED_QUESTIONS.map((q) => (
                   <button
                     key={q}
@@ -366,23 +456,17 @@ const sidebarContent = (
                       <div className="flex flex-wrap gap-1 mt-2">
                         {msg.citations.map((c) => {
                           const meta = msg.citationMeta?.find((m) => m.filename === c);
-                          const isExternal = meta && (meta.driveFileId || meta.sourceUrl || meta.notionPageId);
-                          return meta ? (
+                          const hasLink = meta && (meta.driveFileId || meta.sourceUrl);
+                          return hasLink ? (
                             <button
                               key={c}
                               onClick={() => openSource(meta)}
-                              title={citationLabel(meta)}
+                              title="Відкрити у Google Drive"
                               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-orange-50 text-[#cc6b14] border border-[#ff8319]/30 hover:bg-orange-100 hover:border-[#ff8319]/60 transition-colors cursor-pointer"
                             >
-                              {isExternal ? (
-                                <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                </svg>
-                              ) : (
-                                <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                </svg>
-                              )}
+                              <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                              </svg>
                               {c}
                             </button>
                           ) : (
@@ -457,44 +541,6 @@ const sidebarContent = (
         </div>
       </div>
 
-      {/* Document preview drawer */}
-      {previewDoc && (
-        <div className="fixed inset-0 z-50 flex justify-end">
-          <div
-            className="flex-1 bg-black/30"
-            onClick={() => setPreviewDoc(null)}
-          />
-          <div className="w-full md:w-[480px] bg-white flex flex-col shadow-2xl">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <svg className="w-4 h-4 text-[#ff8319] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <h3 className="text-sm font-semibold text-gray-900 truncate">{previewDoc.filename}</h3>
-              </div>
-              <button
-                onClick={() => setPreviewDoc(null)}
-                className="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 shrink-0 ml-2"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto px-5 py-4">
-              {previewLoading ? (
-                <div className="flex items-center justify-center h-32">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#ff8319]" />
-                </div>
-              ) : (
-                <pre className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed font-sans">
-                  {previewDoc.content}
-                </pre>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

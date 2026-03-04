@@ -11,7 +11,7 @@ import {
 } from "@/lib/google-drive";
 import { FieldValue } from "firebase-admin/firestore";
 
-export const maxDuration = 60;
+export const maxDuration = 120; // 120s — allows time for Gemini OCR on scanned PDFs
 
 function getFolderId(): string | null {
   const id = process.env.GOOGLE_DRIVE_FOLDER_ID?.trim();

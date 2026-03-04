@@ -5,7 +5,7 @@ import { getAdminDb } from "@/lib/firebase-admin";
 import { parseFile } from "@/lib/parsers";
 import { FieldValue } from "firebase-admin/firestore";
 
-export const maxDuration = 60; // 60 second timeout for large files
+export const maxDuration = 120; // 120s — allows time for Gemini OCR on scanned PDFs
 
 export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions);

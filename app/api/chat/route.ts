@@ -28,6 +28,7 @@ export async function POST(request: NextRequest) {
   // Load or create conversation
   let convRef;
   let conversationHistory: ChatMessage[] = [];
+  let isNewConversation = true;
 
   if (conversationId) {
     convRef = db.collection("conversations").doc(conversationId);
@@ -40,6 +41,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Доступ заборонено" }, { status: 403 });
       }
       conversationHistory = data.messages || [];
+      isNewConversation = false;
     } else {
       // Conversation not found, create new
       convRef = db.collection("conversations").doc();
@@ -123,6 +125,7 @@ export async function POST(request: NextRequest) {
     messages: newMessages.slice(-20), // keep last 20 messages
     updatedAt: FieldValue.serverTimestamp(),
     createdAt: FieldValue.serverTimestamp(),
+    ...(isNewConversation && { title: query.trim().slice(0, 60) }),
   };
 
   if (!fromCache) {
