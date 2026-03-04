@@ -687,7 +687,7 @@ export default function AdminPage() {
   };
 
   const refreshWebSelected = async () => {
-    for (const id of webSelected) {
+    for (const id of Array.from(webSelected)) {
       setRefreshingId(id);
       try { await fetch(`/api/admin/websites/${id}`, { method: "POST" }); } catch { /**/ }
     }
