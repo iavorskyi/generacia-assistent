@@ -41,10 +41,12 @@ function formatRelativeDate(iso: string | null): string {
 }
 
 const SUGGESTED_QUESTIONS = [
-  "Яка наша політика відпусток?",
-  "Як подати звіт про витрати?",
-  "Які процедури деплою в інженерії?",
-  "Де знайти довідник працівника?",
+  "Як оформити щорічну відпустку і скільки днів мені належить?",
+  "Яка процедура відшкодування витрат у відрядженні?",
+  "Які вимоги до інформаційної безпеки та паролів?",
+  "Як відбувається онбординг нового співробітника?",
+  "Де знайти шаблон договору або NDA з контрагентом?",
+  "Яка процедура закупівлі обладнання або послуг?",
 ];
 
 export default function Home() {
@@ -404,7 +406,7 @@ const sidebarContent = (
               <p className="text-gray-500 mb-8">
                 Запитайте мене про політики компанії, процедури та документацію.
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {SUGGESTED_QUESTIONS.map((q) => (
                   <button
                     key={q}
