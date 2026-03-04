@@ -12,6 +12,10 @@ export interface SelectedDocument {
   category: DocumentCategory;
   priority: number;
   tokenCount: number;
+  // Source identifiers (present for Drive/Notion/web-sourced documents)
+  driveFileId?: string | null;
+  sourceUrl?: string | null;
+  notionPageId?: string | null;
 }
 
 export interface DocMeta {

@@ -3,17 +3,27 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getAdminDb } from "@/lib/firebase-admin";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.isAdmin) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
+  const source = request.nextUrl.searchParams.get("source"); // "drive"|"notion"|"web"|null
+
   const db = getAdminDb();
-  const snapshot = await db
-    .collection("documents")
-    .orderBy("uploadedAt", "desc")
-    .get();
+  const col = db.collection("documents");
+
+  // When filtering by sourceType, skip orderBy to avoid requiring a composite index.
+  // The admin UI already sorts client-side, so ordering here is not needed.
+  let query;
+  if (source === "drive" || source === "notion" || source === "web") {
+    query = col.where("sourceType", "==", source);
+  } else {
+    query = col.orderBy("uploadedAt", "desc");
+  }
+
+  const snapshot = await query.get();
 
   const documents = snapshot.docs.map((doc) => ({
     id: doc.id,

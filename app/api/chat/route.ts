@@ -96,9 +96,14 @@ export async function POST(request: NextRequest) {
         return normFile === normCit || normFile.includes(normCit) || normCit.includes(normFile);
       });
       if (!doc) return null;
-      const d = doc as typeof doc & { driveFileId?: string; sourceUrl?: string; notionPageId?: string };
       // Use citName (what the AI wrote) as the key so the UI can match it to citations[]
-      return { id: doc.id, filename: citName, driveFileId: d.driveFileId ?? null, sourceUrl: d.sourceUrl ?? null, notionPageId: d.notionPageId ?? null };
+      return {
+        id: doc.id,
+        filename: citName,
+        driveFileId: doc.driveFileId ?? null,
+        sourceUrl: doc.sourceUrl ?? null,
+        notionPageId: doc.notionPageId ?? null,
+      };
     })
     .filter((m): m is CitationMeta => m !== null);
 
@@ -149,9 +154,10 @@ export async function POST(request: NextRequest) {
     // Translate known API errors into friendly Ukrainian messages
     if (error instanceof Error) {
       const msg = error.message;
+      const msgL = msg.toLowerCase();
 
-      // Gemini quota / billing errors (429)
-      if (msg.includes("429") || msg.includes("Too Many Requests") || msg.includes("quota")) {
+      // Gemini quota / billing errors (429) — case-insensitive match
+      if (msgL.includes("quota") || msgL.includes("429") || msgL.includes("too many requests") || msgL.includes("resource_exhausted")) {
         return NextResponse.json(
           {
             error:
@@ -164,7 +170,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Gemini auth errors (403)
-      if (msg.includes("403") || msg.includes("API key") || msg.includes("permission")) {
+      if (msgL.includes("403") || msgL.includes("api key") || msgL.includes("permission denied")) {
         return NextResponse.json(
           { error: "Gemini API: невірний або відсутній API-ключ. Перевірте GEMINI_API_KEY." },
           { status: 403 }

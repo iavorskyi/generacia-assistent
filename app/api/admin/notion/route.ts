@@ -94,12 +94,13 @@ export async function POST(req: Request) {
     );
   }
 
-  let pageId: string, title: string, lastEdited: string;
+  let pageId: string, title: string, lastEdited: string, url: string;
   try {
     const body = await req.json();
     pageId = body.pageId;
     title = body.title;
     lastEdited = body.lastEdited;
+    url = body.url ?? "";
     if (!pageId || !title || !lastEdited) {
       return NextResponse.json({ error: "pageId, title and lastEdited are required" }, { status: 400 });
     }
@@ -121,6 +122,9 @@ export async function POST(req: Request) {
     const priority = calculatePriority(filename, category);
     const tokenCount = estimateTokenCount(content);
 
+    // Use the real Notion URL if provided, otherwise construct from pageId
+    const sourceUrl = url || `https://www.notion.so/${pageId.replace(/-/g, "")}`;
+
     if (existing) {
       await db.collection("documents").doc(existing.id).update({
         filename,
@@ -128,6 +132,8 @@ export async function POST(req: Request) {
         category,
         priority,
         tokenCount,
+        sourceUrl,
+        notionPageId: pageId,
         notionLastEdited: lastEdited,
         lastFetched: FieldValue.serverTimestamp(),
       });
@@ -146,6 +152,7 @@ export async function POST(req: Request) {
         sourceType: "notion",
         notionPageId: pageId,
         notionLastEdited: lastEdited,
+        sourceUrl,
         lastFetched: FieldValue.serverTimestamp(),
       });
       return NextResponse.json({ status: "added" });

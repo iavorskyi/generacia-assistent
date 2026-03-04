@@ -146,6 +146,8 @@ export async function POST(req: Request) {
       ? Math.round(MAX_CONTENT_BYTES / 4)
       : parsed.tokenCount;
 
+    const driveSourceUrl = `https://drive.google.com/file/d/${fileId}/view`;
+
     if (existing) {
       await db.collection("documents").doc(existing.id).update({
         filename,
@@ -154,6 +156,8 @@ export async function POST(req: Request) {
         priority: parsed.priority,
         tokenCount,
         truncated,
+        driveFileId: fileId,
+        sourceUrl: driveSourceUrl,
         driveModifiedTime: modifiedTime,
         lastFetched: FieldValue.serverTimestamp(),
       });
@@ -172,6 +176,7 @@ export async function POST(req: Request) {
         lastUsed: null,
         sourceType: "drive",
         driveFileId: fileId,
+        sourceUrl: driveSourceUrl,
         driveModifiedTime: modifiedTime,
         lastFetched: FieldValue.serverTimestamp(),
       });
