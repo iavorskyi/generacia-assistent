@@ -130,6 +130,11 @@ export async function parseFile(
 
   if (ext === "pdf") {
     content = await parsePDF(buffer);
+    if (!content || content.length < 50) {
+      // No text layer detected — fall back to Gemini Vision OCR
+      const { extractTextWithOCR } = await import("@/lib/pdf-ocr");
+      content = await extractTextWithOCR(buffer);
+    }
   } else if (ext === "docx" || ext === "doc") {
     content = await parseDOCX(buffer);
   } else if (ext === "txt" || ext === "md") {

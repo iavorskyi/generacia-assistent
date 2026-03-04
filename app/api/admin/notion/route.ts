@@ -6,7 +6,7 @@ import { listNotionPages, fetchPageAsMarkdown, NotionPage } from "@/lib/notion";
 import { FieldValue } from "firebase-admin/firestore";
 import { detectCategory, calculatePriority, estimateTokenCount } from "@/lib/parsers";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 async function getExistingDocByNotionId(
   notionPageId: string
@@ -79,8 +79,9 @@ export async function GET() {
   }
 }
 
-// POST /api/admin/notion — execute sync
-export async function POST() {
+// POST /api/admin/notion — sync a single page by ID
+// Body: { pageId: string; title: string; lastEdited: string; url: string }
+export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.isAdmin) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
@@ -93,69 +94,69 @@ export async function POST() {
     );
   }
 
-  const result = {
-    added: 0,
-    updated: 0,
-    unchanged: 0,
-    errors: [] as string[],
-  };
+  let pageId: string, title: string, lastEdited: string, url: string;
+  try {
+    const body = await req.json();
+    pageId = body.pageId;
+    title = body.title;
+    lastEdited = body.lastEdited;
+    url = body.url ?? "";
+    if (!pageId || !title || !lastEdited) {
+      return NextResponse.json({ error: "pageId, title and lastEdited are required" }, { status: 400 });
+    }
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
 
   try {
-    const pages = await listNotionPages();
     const db = getAdminDb();
+    const existing = await getExistingDocByNotionId(pageId);
 
-    for (const page of pages) {
-      try {
-        const existing = await getExistingDocByNotionId(page.id);
-
-        if (existing && existing.notionLastEdited === page.lastEdited) {
-          result.unchanged++;
-          continue;
-        }
-
-        const content = await fetchPageAsMarkdown(page.id);
-        const filename = `${page.title}.md`;
-        const category = detectCategory(filename, content);
-        const priority = calculatePriority(filename, category);
-        const tokenCount = estimateTokenCount(content);
-
-        if (existing) {
-          await db.collection("documents").doc(existing.id).update({
-            filename,
-            content,
-            category,
-            priority,
-            tokenCount,
-            notionLastEdited: page.lastEdited,
-            lastFetched: FieldValue.serverTimestamp(),
-          });
-          result.updated++;
-        } else {
-          await db.collection("documents").add({
-            filename,
-            content,
-            category,
-            priority,
-            tokenCount,
-            uploadedBy: "notion-sync",
-            uploadedAt: FieldValue.serverTimestamp(),
-            usageCount: 0,
-            lastUsed: null,
-            sourceType: "notion",
-            notionPageId: page.id,
-            notionLastEdited: page.lastEdited,
-            lastFetched: FieldValue.serverTimestamp(),
-          });
-          result.added++;
-        }
-      } catch (pageError) {
-        const msg =
-          pageError instanceof Error ? pageError.message : "Unknown error";
-        result.errors.push(`${page.title}: ${msg}`);
-      }
+    if (existing && existing.notionLastEdited === lastEdited) {
+      return NextResponse.json({ status: "unchanged" });
     }
 
-    return NextResponse.json(result);
+    const content = await fetchPageAsMarkdown(pageId);
+    const filename = `${title}.md`;
+    const category = detectCategory(filename, content);
+    const priority = calculatePriority(filename, category);
+    const tokenCount = estimateTokenCount(content);
+
+    // Use the real Notion URL if provided, otherwise construct from pageId
+    const sourceUrl = url || `https://www.notion.so/${pageId.replace(/-/g, "")}`;
+
+    if (existing) {
+      await db.collection("documents").doc(existing.id).update({
+        filename,
+        content,
+        category,
+        priority,
+        tokenCount,
+        sourceUrl,
+        notionPageId: pageId,
+        notionLastEdited: lastEdited,
+        lastFetched: FieldValue.serverTimestamp(),
+      });
+      return NextResponse.json({ status: "updated" });
+    } else {
+      await db.collection("documents").add({
+        filename,
+        content,
+        category,
+        priority,
+        tokenCount,
+        uploadedBy: "notion-sync",
+        uploadedAt: FieldValue.serverTimestamp(),
+        usageCount: 0,
+        lastUsed: null,
+        sourceType: "notion",
+        notionPageId: pageId,
+        notionLastEdited: lastEdited,
+        sourceUrl,
+        lastFetched: FieldValue.serverTimestamp(),
+      });
+      return NextResponse.json({ status: "added" });
+    }
   } catch (error) {
     console.error("Notion sync error:", error);
     const message = error instanceof Error ? error.message : "Sync failed";

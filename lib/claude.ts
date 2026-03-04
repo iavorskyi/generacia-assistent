@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { SelectedDocument, DocMeta } from "@/lib/document-selector";
 import { TokenUsage } from "@/types";
+import { getSystemPrompt } from "@/lib/system-prompt";
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -11,13 +12,13 @@ const SYSTEM_PROMPT = `Ти — внутрішній AI-асистент для 
 Правила:
 1. Відповідай ТІЛЬКИ використовуючи інформацію з наданих документів
 2. Якщо відповіді немає в документах, скажи: "У документах компанії немає інформації про це. Будь ласка, зверніться до HR або вашого керівника."
-3. Завжди вказуй назву документа(ів), які ти використав, в кінці відповіді
+3. Завжди вказуй ТОЧНУ назву файлу документа(ів) в кінці відповіді — ТОЧНО як написано в атрибуті name тегу <document>, включаючи розширення (.pdf, .docx тощо)
 4. Будь лаконічним та корисним
 5. Ніколи не вигадуй інформацію та не використовуй зовнішні знання для питань, специфічних для компанії
 6. Для загальних питань, не пов'язаних зі специфікою компанії (наприклад, "що таке Python?"), можеш відповідати звичайно
 7. Якщо запитують про список всіх документів або джерел — перелічуй файли з <document_catalog>, а не тільки ті, що є у <company_documents>
 
-Формат цитування: **Джерела: [Назва документа 1], [Назва документа 2]**`;
+Формат цитування: **Джерела: [точна_назва_файлу.pdf], [інша_назва.docx]**`;
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -108,10 +109,11 @@ export async function chatWithCachedContext(
     },
   ];
 
+  const systemPrompt = await getSystemPrompt();
   const response = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 1024,
-    system: SYSTEM_PROMPT,
+    max_tokens: 4096,
+    system: systemPrompt,
     messages,
   });
 
@@ -134,9 +136,9 @@ export async function chatWithCachedContext(
     citations,
     usage: {
       input_tokens: usage.input_tokens,
+      output_tokens: usage.output_tokens,
       cache_creation_input_tokens: usage.cache_creation_input_tokens ?? 0,
       cache_read_input_tokens: usage.cache_read_input_tokens ?? 0,
-      output_tokens: usage.output_tokens,
     },
     cacheStatus: cacheRead ? "hit" : cacheCreated ? "created" : "miss",
   };
@@ -152,8 +154,8 @@ export function calculateCost(usage: TokenUsage): number {
 
   return (
     usage.input_tokens * INPUT_COST +
-    usage.cache_creation_input_tokens * CACHE_WRITE_COST +
-    usage.cache_read_input_tokens * CACHE_READ_COST +
+    (usage.cache_creation_input_tokens ?? 0) * CACHE_WRITE_COST +
+    (usage.cache_read_input_tokens ?? 0) * CACHE_READ_COST +
     usage.output_tokens * OUTPUT_COST
   );
 }

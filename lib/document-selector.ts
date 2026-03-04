@@ -12,6 +12,10 @@ export interface SelectedDocument {
   category: DocumentCategory;
   priority: number;
   tokenCount: number;
+  // Source identifiers (present for Drive/Notion/web-sourced documents)
+  driveFileId?: string | null;
+  sourceUrl?: string | null;
+  notionPageId?: string | null;
 }
 
 export interface DocMeta {
@@ -151,7 +155,8 @@ export async function selectDocuments(
     };
   });
 
-  // 2. Check if conversation has a valid cache
+  // 2. Check if conversation has a valid cache.
+  //    Only use it if all filename-matched docs for this query are already cached.
   if (conversationId) {
     const convDoc = await db
       .collection("conversations")
@@ -164,14 +169,45 @@ export async function selectDocuments(
       isCacheValid(convData?.cacheValidUntil?.toDate())
     ) {
       const cachedIds: string[] = convData?.cachedDocumentIds ?? [];
-      const docDocs = await Promise.all(
-        cachedIds.map((id) => db.collection("documents").doc(id).get())
-      );
-      const documents = docDocs
-        .filter((d) => d.exists)
-        .map((d) => ({ id: d.id, ...d.data() } as SelectedDocument));
+      const cachedIdSet = new Set(cachedIds);
 
-      return { documents, allDocumentNames: allMeta, fromCache: true };
+      // Quick filename-match check against metadata (no content fetch)
+      const queryWordsForCache = query
+        .toLowerCase()
+        .split(/[\s,.()\[\]\/\\]+/)
+        .filter((w) => w.length >= 3);
+
+      const STEM = 6;
+      const filenameMatchesForCache = queryWordsForCache.length > 0
+        ? allMeta.filter((d) => {
+            const lower = d.filename.toLowerCase();
+            return queryWordsForCache.some((w) => {
+              if (lower.includes(w)) return true;
+              if (w.length >= STEM) {
+                const stem = w.substring(0, STEM);
+                return lower.split(/[\s_\-.,()]+/).some(
+                  (fw) => fw.length >= STEM && fw.substring(0, STEM) === stem
+                );
+              }
+              return false;
+            });
+          })
+        : [];
+
+      // If every filename-matched doc is already in the cache, reuse it
+      const allMatchesCached = filenameMatchesForCache.every((d) => cachedIdSet.has(d.id));
+
+      if (allMatchesCached) {
+        const docDocs = await Promise.all(
+          cachedIds.map((id) => db.collection("documents").doc(id).get())
+        );
+        const documents = docDocs
+          .filter((d) => d.exists)
+          .map((d) => ({ id: d.id, ...d.data() } as SelectedDocument));
+
+        return { documents, allDocumentNames: allMeta, fromCache: true };
+      }
+      // Otherwise fall through and re-select with the new query
     }
   }
 
@@ -180,16 +216,34 @@ export async function selectDocuments(
   const queryCategory = detectQueryCategory(query);
 
   // Find docs whose filename contains query words (min 3 chars)
+  // Uses prefix/stem matching (first 6 chars) to handle Ukrainian morphology
+  // e.g. "опрацювувати" matches "Опрацювання", "сервісне" matches "сервісних"
   const queryWords = query
     .toLowerCase()
     .split(/[\s,.()\[\]\/\\]+/)
     .filter((w) => w.length >= 3);
 
+  const STEM_LEN = 6;
+  function stemMatch(queryWord: string, filenameText: string): boolean {
+    // Exact substring match
+    if (filenameText.includes(queryWord)) return true;
+    // Prefix/stem match for words long enough
+    if (queryWord.length >= STEM_LEN) {
+      const qStem = queryWord.substring(0, STEM_LEN);
+      const filenameWords = filenameText.split(/[\s_\-.,()]+/);
+      return filenameWords.some(
+        (fw) => fw.length >= STEM_LEN && fw.substring(0, STEM_LEN) === qStem
+      );
+    }
+    return false;
+  }
+
   const filenameMatches =
     queryWords.length > 0
-      ? allMeta.filter((d) =>
-          queryWords.some((w) => d.filename.toLowerCase().includes(w))
-        )
+      ? allMeta.filter((d) => {
+          const lower = d.filename.toLowerCase();
+          return queryWords.some((w) => stemMatch(w, lower));
+        })
       : [];
   const filenameMatchIds = new Set(filenameMatches.map((d) => d.id));
 
@@ -206,16 +260,20 @@ export async function selectDocuments(
 
   const orderedMeta = [...filenameMatches, ...categoryMatches, ...remaining];
 
-  // 4. Select which docs fit within the token budget
+  // 4. Select which docs fit within the token budget.
+  //    Filename-matched docs are always included (they're directly relevant).
+  //    Remaining budget is filled with category/general docs.
   const selectedMeta: DocMeta[] = [];
   let tokenTotal = 0;
 
   for (const doc of orderedMeta) {
-    if (tokenTotal + doc.tokenCount <= MAX_TOKEN_BUDGET) {
+    const isFilenameMatch = filenameMatchIds.has(doc.id);
+    // Always include filename matches; others must fit in budget
+    if (isFilenameMatch || tokenTotal + doc.tokenCount <= MAX_TOKEN_BUDGET) {
       selectedMeta.push(doc);
       tokenTotal += doc.tokenCount;
     }
-    if (tokenTotal >= MAX_TOKEN_BUDGET * 0.9) break; // leave 10% buffer
+    if (!isFilenameMatch && tokenTotal >= MAX_TOKEN_BUDGET * 0.9) break;
   }
 
   // 5. Fetch full content only for the selected docs

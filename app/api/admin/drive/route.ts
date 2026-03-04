@@ -11,7 +11,7 @@ import {
 } from "@/lib/google-drive";
 import { FieldValue } from "firebase-admin/firestore";
 
-export const maxDuration = 300;
+export const maxDuration = 120; // 120s — allows time for Gemini OCR on scanned PDFs
 
 function getFolderId(): string | null {
   const id = process.env.GOOGLE_DRIVE_FOLDER_ID?.trim();
@@ -37,7 +37,7 @@ async function getExistingDocByDriveId(
   };
 }
 
-// GET /api/admin/drive — preview files with sync status
+// GET /api/admin/drive — list files with sync status
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.isAdmin) {
@@ -92,86 +92,96 @@ export async function GET() {
   }
 }
 
-// POST /api/admin/drive — execute sync
-export async function POST() {
+// POST /api/admin/drive — sync a single file by ID
+// Body: { fileId: string; name: string; mimeType: string; modifiedTime: string }
+export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.isAdmin) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
-  const folderId = getFolderId();
-  if (!folderId) {
-    return NextResponse.json(
-      { error: "GOOGLE_DRIVE_FOLDER_ID is not configured" },
-      { status: 500 }
-    );
-  }
-
-  const result = {
-    added: 0,
-    updated: 0,
-    unchanged: 0,
-    errors: [] as string[],
-  };
-
+  let fileId: string, name: string, mimeType: string, modifiedTime: string;
   try {
-    const files = await listFilesInFolder(folderId);
-    const db = getAdminDb();
-
-    // Process files in parallel batches of 5 to stay well within timeout
-    const CONCURRENCY = 5;
-
-    for (let i = 0; i < files.length; i += CONCURRENCY) {
-      await Promise.all(
-        files.slice(i, i + CONCURRENCY).map(async (file) => {
-          try {
-            const existing = await getExistingDocByDriveId(file.id);
-
-            if (existing && existing.driveModifiedTime === file.modifiedTime) {
-              result.unchanged++;
-              return;
-            }
-
-            const buffer = await downloadFileAsBuffer(file.id, file.mimeType);
-            const filename = normalizeFilename(file);
-            const parsed = await parseFile(buffer, filename);
-
-            if (existing) {
-              await db.collection("documents").doc(existing.id).update({
-                filename,
-                content: parsed.content,
-                category: parsed.category,
-                priority: parsed.priority,
-                tokenCount: parsed.tokenCount,
-                driveModifiedTime: file.modifiedTime,
-              });
-              result.updated++;
-            } else {
-              await db.collection("documents").add({
-                filename,
-                content: parsed.content,
-                category: parsed.category,
-                priority: parsed.priority,
-                tokenCount: parsed.tokenCount,
-                uploadedBy: "drive-sync",
-                uploadedAt: FieldValue.serverTimestamp(),
-                usageCount: 0,
-                lastUsed: null,
-                driveFileId: file.id,
-                driveModifiedTime: file.modifiedTime,
-              });
-              result.added++;
-            }
-          } catch (fileError) {
-            const msg =
-              fileError instanceof Error ? fileError.message : "Unknown error";
-            result.errors.push(`${file.name}: ${msg}`);
-          }
-        })
+    const body = await req.json();
+    fileId = body.fileId;
+    name = body.name;
+    mimeType = body.mimeType;
+    modifiedTime = body.modifiedTime;
+    if (!fileId || !name || !modifiedTime) {
+      return NextResponse.json(
+        { error: "fileId, name and modifiedTime are required" },
+        { status: 400 }
       );
     }
+    mimeType = mimeType || "application/octet-stream";
+  } catch (e) {
+    console.error("Drive POST parse error:", e);
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
 
-    return NextResponse.json(result);
+  try {
+    const db = getAdminDb();
+    const existing = await getExistingDocByDriveId(fileId);
+
+    if (existing && existing.driveModifiedTime === modifiedTime) {
+      return NextResponse.json({ status: "unchanged" });
+    }
+
+    const file: DriveFile = { id: fileId, name, mimeType, modifiedTime, size: "" };
+    const buffer = await downloadFileAsBuffer(fileId, mimeType);
+    const filename = normalizeFilename(file);
+    const parsed = await parseFile(buffer, filename);
+
+    // Firestore document limit is 1 MiB. Reserve ~100 KB for other fields.
+    const MAX_CONTENT_BYTES = 900_000;
+    let content = parsed.content;
+    let truncated = false;
+    if (Buffer.byteLength(content, "utf8") > MAX_CONTENT_BYTES) {
+      // Truncate to fit, cutting at a safe character boundary
+      content = Buffer.from(content, "utf8").slice(0, MAX_CONTENT_BYTES).toString("utf8");
+      content += "\n\n[Вміст обрізано через обмеження розміру]";
+      truncated = true;
+    }
+    const tokenCount = truncated
+      ? Math.round(MAX_CONTENT_BYTES / 4)
+      : parsed.tokenCount;
+
+    const driveSourceUrl = `https://drive.google.com/file/d/${fileId}/view`;
+
+    if (existing) {
+      await db.collection("documents").doc(existing.id).update({
+        filename,
+        content,
+        category: parsed.category,
+        priority: parsed.priority,
+        tokenCount,
+        truncated,
+        driveFileId: fileId,
+        sourceUrl: driveSourceUrl,
+        driveModifiedTime: modifiedTime,
+        lastFetched: FieldValue.serverTimestamp(),
+      });
+      return NextResponse.json({ status: "updated", truncated });
+    } else {
+      await db.collection("documents").add({
+        filename,
+        content,
+        category: parsed.category,
+        priority: parsed.priority,
+        tokenCount,
+        truncated,
+        uploadedBy: "drive-sync",
+        uploadedAt: FieldValue.serverTimestamp(),
+        usageCount: 0,
+        lastUsed: null,
+        sourceType: "drive",
+        driveFileId: fileId,
+        sourceUrl: driveSourceUrl,
+        driveModifiedTime: modifiedTime,
+        lastFetched: FieldValue.serverTimestamp(),
+      });
+      return NextResponse.json({ status: "added", truncated });
+    }
   } catch (error) {
     console.error("Drive sync error:", error);
     const message = error instanceof Error ? error.message : "Sync failed";
