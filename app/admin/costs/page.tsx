@@ -8,11 +8,24 @@ import Link from "next/link";
 interface DayMetrics {
   date: string;
   queryCount: number;
+  // Totals
   inputTokens: number;
   cacheCreationTokens: number;
   cacheReadTokens: number;
   outputTokens: number;
-  estimatedCost: number;
+  // Per-provider tokens
+  claudeQueryCount: number;
+  claudeInputTokens: number;
+  claudeCacheCreationTokens: number;
+  claudeCacheReadTokens: number;
+  claudeOutputTokens: number;
+  geminiQueryCount: number;
+  geminiInputTokens: number;
+  geminiOutputTokens: number;
+  // Costs (recalculated server-side from tokens)
+  claudeCost: number;
+  geminiCost: number;
+  calculatedCost: number;
 }
 
 export default function CostDashboard() {
@@ -54,34 +67,43 @@ export default function CostDashboard() {
   // Aggregate totals
   const totals = metrics.reduce(
     (acc, m) => ({
-      queries: acc.queries + m.queryCount,
-      cost: acc.cost + m.estimatedCost,
-      cacheRead: acc.cacheRead + m.cacheReadTokens,
-      cacheCreation: acc.cacheCreation + m.cacheCreationTokens,
-      inputTokens: acc.inputTokens + m.inputTokens,
-      outputTokens: acc.outputTokens + m.outputTokens,
+      queries:              acc.queries              + m.queryCount,
+      cost:                 acc.cost                 + m.calculatedCost,
+      claudeCost:           acc.claudeCost           + m.claudeCost,
+      geminiCost:           acc.geminiCost           + m.geminiCost,
+      claudeQueries:        acc.claudeQueries        + m.claudeQueryCount,
+      geminiQueries:        acc.geminiQueries        + m.geminiQueryCount,
+      claudeInputTokens:    acc.claudeInputTokens    + m.claudeInputTokens,
+      claudeOutputTokens:   acc.claudeOutputTokens   + m.claudeOutputTokens,
+      claudeCacheRead:      acc.claudeCacheRead      + m.claudeCacheReadTokens,
+      claudeCacheCreation:  acc.claudeCacheCreation  + m.claudeCacheCreationTokens,
+      geminiInputTokens:    acc.geminiInputTokens    + m.geminiInputTokens,
+      geminiOutputTokens:   acc.geminiOutputTokens   + m.geminiOutputTokens,
     }),
     {
-      queries: 0,
-      cost: 0,
-      cacheRead: 0,
-      cacheCreation: 0,
-      inputTokens: 0,
-      outputTokens: 0,
+      queries: 0, cost: 0,
+      claudeCost: 0, geminiCost: 0,
+      claudeQueries: 0, geminiQueries: 0,
+      claudeInputTokens: 0, claudeOutputTokens: 0,
+      claudeCacheRead: 0, claudeCacheCreation: 0,
+      geminiInputTokens: 0, geminiOutputTokens: 0,
     }
   );
 
-  const cacheHitRate =
-    totals.queries > 0
-      ? Math.round((totals.cacheRead / (totals.cacheRead + totals.cacheCreation || 1)) * 100)
-      : 0;
+  const avgCostPerQuery = totals.queries > 0 ? totals.cost / totals.queries : 0;
 
-  const avgCostPerQuery =
-    totals.queries > 0 ? totals.cost / totals.queries : 0;
+  const claudeCacheHitRate =
+    (totals.claudeCacheRead + totals.claudeCacheCreation) > 0
+      ? Math.round((totals.claudeCacheRead / (totals.claudeCacheRead + totals.claudeCacheCreation)) * 100)
+      : 0;
 
   const today = metrics.find(
     (m) => m.date === new Date().toISOString().split("T")[0]
   );
+
+  const hasClaude = totals.claudeQueries > 0;
+  const hasGemini = totals.geminiQueries > 0;
+  const hasCache  = totals.claudeCacheRead > 0 || totals.claudeCacheCreation > 0;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -95,6 +117,7 @@ export default function CostDashboard() {
               Панель витрат
             </h1>
           </div>
+          <p className="text-xs text-gray-400">Вартість перерахована за актуальними тарифами</p>
         </div>
       </header>
 
@@ -103,20 +126,20 @@ export default function CostDashboard() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <StatCard
             label="Витрати сьогодні"
-            value={`$${(today?.estimatedCost ?? 0).toFixed(4)}`}
+            value={`$${(today?.calculatedCost ?? 0).toFixed(4)}`}
             sub={`${today?.queryCount ?? 0} запитів`}
           />
           <StatCard
-            label="Витрати за період"
+            label="Витрати за 30 днів"
             value={`$${totals.cost.toFixed(3)}`}
-            sub={`${metrics.length} днів`}
+            sub={`${metrics.length} днів із даними`}
           />
-          {(totals.cacheRead > 0 || totals.cacheCreation > 0) && (
+          {hasCache && (
             <StatCard
-              label="Відсоток кешу"
-              value={`${cacheHitRate}%`}
+              label="Кеш Claude"
+              value={`${claudeCacheHitRate}%`}
               sub="ціль: >60%"
-              highlight={cacheHitRate >= 60}
+              highlight={claudeCacheHitRate >= 60}
             />
           )}
           <StatCard
@@ -126,37 +149,77 @@ export default function CostDashboard() {
           />
         </div>
 
-        {/* Token breakdown */}
-        <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-8">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            Використання токенів
-          </h2>
-          <div className={`grid gap-6 text-center ${totals.cacheRead > 0 || totals.cacheCreation > 0 ? "grid-cols-3" : "grid-cols-2"}`}>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">
-                {(totals.inputTokens / 1000).toFixed(1)}k
-              </p>
-              <p className="text-sm text-gray-500">Вхідні токени</p>
-              <p className="text-xs text-gray-400">тариф $0.25/1M</p>
-            </div>
-            {(totals.cacheRead > 0 || totals.cacheCreation > 0) && (
-              <div>
-                <p className="text-2xl font-bold text-green-600">
-                  {(totals.cacheRead / 1000).toFixed(1)}k
-                </p>
-                <p className="text-sm text-gray-500">Токени з кешу</p>
-                <p className="text-xs text-gray-400">тариф $0.03/1M</p>
+        {/* Per-provider cost breakdown */}
+        {(hasClaude || hasGemini) && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+            {hasClaude && (
+              <div className="bg-white rounded-2xl border border-gray-200 p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-base font-semibold text-gray-900">Claude Haiku 4.5</h2>
+                  <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
+                    {totals.claudeQueries} запитів
+                  </span>
+                </div>
+                <p className="text-3xl font-bold text-gray-900 mb-4">${totals.claudeCost.toFixed(4)}</p>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between text-gray-600">
+                    <span>Вхідні токени</span>
+                    <span>{(totals.claudeInputTokens / 1000).toFixed(1)}k
+                      <span className="text-xs text-gray-400 ml-1">@ $0.25/1M</span>
+                    </span>
+                  </div>
+                  {hasCache && (
+                    <>
+                      <div className="flex justify-between text-gray-600">
+                        <span>Запис у кеш</span>
+                        <span>{(totals.claudeCacheCreation / 1000).toFixed(1)}k
+                          <span className="text-xs text-gray-400 ml-1">@ $0.30/1M</span>
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-green-600">
+                        <span>Читання з кешу</span>
+                        <span>{(totals.claudeCacheRead / 1000).toFixed(1)}k
+                          <span className="text-xs text-green-400 ml-1">@ $0.03/1M</span>
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  <div className="flex justify-between text-gray-600">
+                    <span>Вихідні токени</span>
+                    <span>{(totals.claudeOutputTokens / 1000).toFixed(1)}k
+                      <span className="text-xs text-gray-400 ml-1">@ $1.25/1M</span>
+                    </span>
+                  </div>
+                </div>
               </div>
             )}
-            <div>
-              <p className="text-2xl font-bold text-gray-900">
-                {(totals.outputTokens / 1000).toFixed(1)}k
-              </p>
-              <p className="text-sm text-gray-500">Вихідні токени</p>
-              <p className="text-xs text-gray-400">тариф $1.25/1M</p>
-            </div>
+            {hasGemini && (
+              <div className="bg-white rounded-2xl border border-gray-200 p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-base font-semibold text-gray-900">Gemini 2.5 Flash</h2>
+                  <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                    {totals.geminiQueries} запитів
+                  </span>
+                </div>
+                <p className="text-3xl font-bold text-gray-900 mb-4">${totals.geminiCost.toFixed(4)}</p>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between text-gray-600">
+                    <span>Вхідні токени</span>
+                    <span>{(totals.geminiInputTokens / 1000).toFixed(1)}k
+                      <span className="text-xs text-gray-400 ml-1">@ $0.15/1M</span>
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-gray-600">
+                    <span>Вихідні токени</span>
+                    <span>{(totals.geminiOutputTokens / 1000).toFixed(1)}k
+                      <span className="text-xs text-gray-400 ml-1">@ $0.60/1M</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
+        )}
 
         {/* Daily breakdown table */}
         {loading ? (
@@ -172,38 +235,30 @@ export default function CostDashboard() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="text-left px-6 py-3 font-medium text-gray-600">
-                    Дата
-                  </th>
-                  <th className="text-right px-4 py-3 font-medium text-gray-600">
-                    Запити
-                  </th>
-                  <th className="text-right px-4 py-3 font-medium text-gray-600">
-                    З кешу
-                  </th>
-                  <th className="text-right px-4 py-3 font-medium text-gray-600">
-                    Вихідні токени
-                  </th>
-                  <th className="text-right px-6 py-3 font-medium text-gray-600">
-                    Орієнт. вартість
-                  </th>
+                  <th className="text-left px-6 py-3 font-medium text-gray-600">Дата</th>
+                  <th className="text-right px-4 py-3 font-medium text-gray-600">Запити</th>
+                  <th className="text-right px-4 py-3 font-medium text-purple-600">Claude</th>
+                  <th className="text-right px-4 py-3 font-medium text-blue-600">Gemini</th>
+                  <th className="text-right px-6 py-3 font-medium text-gray-600">Вартість</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {metrics.map((m) => (
                   <tr key={m.date} className="hover:bg-gray-50">
                     <td className="px-6 py-3 text-gray-900">{m.date}</td>
-                    <td className="px-4 py-3 text-right text-gray-700">
-                      {m.queryCount}
+                    <td className="px-4 py-3 text-right text-gray-700">{m.queryCount}</td>
+                    <td className="px-4 py-3 text-right text-purple-600">
+                      {m.claudeQueryCount > 0
+                        ? `${m.claudeQueryCount} · $${m.claudeCost.toFixed(4)}`
+                        : <span className="text-gray-300">—</span>}
                     </td>
-                    <td className="px-4 py-3 text-right text-green-600">
-                      {m.cacheReadTokens.toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-right text-gray-500">
-                      {m.outputTokens.toLocaleString()}
+                    <td className="px-4 py-3 text-right text-blue-600">
+                      {m.geminiQueryCount > 0
+                        ? `${m.geminiQueryCount} · $${m.geminiCost.toFixed(4)}`
+                        : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-6 py-3 text-right font-medium text-gray-900">
-                      ${m.estimatedCost.toFixed(4)}
+                      ${m.calculatedCost.toFixed(4)}
                     </td>
                   </tr>
                 ))}
@@ -230,9 +285,7 @@ function StatCard({
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-5">
       <p className="text-sm text-gray-500 mb-1">{label}</p>
-      <p
-        className={`text-2xl font-bold ${highlight ? "text-green-600" : "text-gray-900"}`}
-      >
+      <p className={`text-2xl font-bold ${highlight ? "text-green-600" : "text-gray-900"}`}>
         {value}
       </p>
       <p className="text-xs text-gray-400 mt-1">{sub}</p>

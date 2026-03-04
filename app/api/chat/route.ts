@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
   await convRef.set(conversationData, { merge: true });
 
   // Track usage metrics (fire and forget)
-  trackUsage(db, result.usage, cost).catch(console.error);
+  trackUsage(db, result.usage, cost, provider).catch(console.error);
 
   return NextResponse.json({
     answer: result.answer,
@@ -191,20 +191,41 @@ export async function POST(request: NextRequest) {
 async function trackUsage(
   db: ReturnType<typeof getAdminDb>,
   usage: { input_tokens: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number; output_tokens: number },
-  cost: number
+  cost: number,
+  provider: "claude" | "gemini"
 ) {
   const today = new Date().toISOString().split("T")[0];
   const ref = db.collection("usageMetrics").doc(today);
+
+  // Per-provider fields for accurate per-model cost recalculation
+  const providerFields =
+    provider === "claude"
+      ? {
+          claudeQueryCount: FieldValue.increment(1),
+          claudeInputTokens: FieldValue.increment(usage.input_tokens),
+          claudeCacheCreationTokens: FieldValue.increment(usage.cache_creation_input_tokens ?? 0),
+          claudeCacheReadTokens: FieldValue.increment(usage.cache_read_input_tokens ?? 0),
+          claudeOutputTokens: FieldValue.increment(usage.output_tokens),
+          claudeCost: FieldValue.increment(cost),
+        }
+      : {
+          geminiQueryCount: FieldValue.increment(1),
+          geminiInputTokens: FieldValue.increment(usage.input_tokens),
+          geminiOutputTokens: FieldValue.increment(usage.output_tokens),
+          geminiCost: FieldValue.increment(cost),
+        };
 
   await ref.set(
     {
       date: today,
       queryCount: FieldValue.increment(1),
+      // Keep totals for backward compat
       inputTokens: FieldValue.increment(usage.input_tokens),
       cacheCreationTokens: FieldValue.increment(usage.cache_creation_input_tokens ?? 0),
       cacheReadTokens: FieldValue.increment(usage.cache_read_input_tokens ?? 0),
       outputTokens: FieldValue.increment(usage.output_tokens),
       estimatedCost: FieldValue.increment(cost),
+      ...providerFields,
     },
     { merge: true }
   );
