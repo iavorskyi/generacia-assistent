@@ -188,12 +188,12 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function applySort<T extends Record<string, unknown>>(
+function applySort<T>(
   rows: T[], sort: SortConfig
 ): T[] {
   return [...rows].sort((a, b) => {
-    const va = String(a[sort.key] ?? "").toLowerCase();
-    const vb = String(b[sort.key] ?? "").toLowerCase();
+    const va = String((a as Record<string, unknown>)[sort.key] ?? "").toLowerCase();
+    const vb = String((b as Record<string, unknown>)[sort.key] ?? "").toLowerCase();
     const cmp = va.localeCompare(vb, "uk");
     return sort.dir === "asc" ? cmp : -cmp;
   });
