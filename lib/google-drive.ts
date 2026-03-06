@@ -57,60 +57,68 @@ function isSharedDriveId(id: string): boolean {
 /**
  * Recursively lists all supported files under a folder (or Shared Drive root).
  * Works for both regular My Drive folders and Shared Drives.
+ *
+ * Optimisations vs the naive sequential BFS:
+ *  1. Single API call per folder (fetches files + subfolders together, filters locally)
+ *     → ~2× fewer round-trips
+ *  2. All folders at the same depth are fetched in parallel
+ *     → depth × latency instead of (total folders) × latency
  */
 export async function listFilesInFolder(folderId: string): Promise<DriveFile[]> {
   const drive = getDriveClient();
   const sharedDrive = isSharedDriveId(folderId);
-
-  const mimeTypeFilter = SUPPORTED_MIME_TYPES.map(
-    (mime) => `mimeType='${mime}'`
-  ).join(" or ");
+  const supportedMimeSet = new Set(SUPPORTED_MIME_TYPES);
 
   const allFiles: DriveFile[] = [];
+  const visitedFolders = new Set<string>([folderId]);
 
-  // BFS over folder tree
-  const queue: string[] = [folderId];
-  const visitedFolders = new Set<string>();
-
-  while (queue.length > 0) {
-    const currentFolder = queue.shift()!;
-    if (visitedFolders.has(currentFolder)) continue;
-    visitedFolders.add(currentFolder);
-
-    // Fetch supported files in this folder
+  /** Fetch all children of one folder; returns subfolder ids found. */
+  async function processFolder(currentFolder: string): Promise<string[]> {
+    const subfolderIds: string[] = [];
     let pageToken: string | undefined;
+
     do {
       const response = await drive.files.list({
-        q: `'${currentFolder}' in parents and (${mimeTypeFilter}) and trashed=false`,
+        q: `'${currentFolder}' in parents and trashed=false`,
         fields: "nextPageToken, files(id, name, mimeType, modifiedTime, size)",
         pageSize: 1000,
-        orderBy: "name",
         supportsAllDrives: true,
         includeItemsFromAllDrives: true,
         ...(sharedDrive ? { driveId: folderId, corpora: "drive" } : {}),
         ...(pageToken ? { pageToken } : {}),
       });
-      allFiles.push(...((response.data.files ?? []) as DriveFile[]));
+
+      for (const file of response.data.files ?? []) {
+        if (file.mimeType === "application/vnd.google-apps.folder") {
+          if (file.id) subfolderIds.push(file.id);
+        } else if (file.mimeType && supportedMimeSet.has(file.mimeType)) {
+          allFiles.push(file as DriveFile);
+        }
+      }
+
       pageToken = response.data.nextPageToken ?? undefined;
     } while (pageToken);
 
-    // Fetch subfolders to recurse into
-    let subPageToken: string | undefined;
-    do {
-      const subResponse = await drive.files.list({
-        q: `'${currentFolder}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-        fields: "nextPageToken, files(id)",
-        pageSize: 1000,
-        supportsAllDrives: true,
-        includeItemsFromAllDrives: true,
-        ...(sharedDrive ? { driveId: folderId, corpora: "drive" } : {}),
-        ...(subPageToken ? { pageToken: subPageToken } : {}),
-      });
-      for (const folder of subResponse.data.files ?? []) {
-        if (folder.id) queue.push(folder.id);
+    return subfolderIds;
+  }
+
+  // BFS level-by-level, processing each level fully in parallel.
+  let currentLevel = [folderId];
+
+  while (currentLevel.length > 0) {
+    const results = await Promise.all(currentLevel.map(processFolder));
+    const nextLevel: string[] = [];
+
+    for (const subfolderIds of results) {
+      for (const id of subfolderIds) {
+        if (!visitedFolders.has(id)) {
+          visitedFolders.add(id);
+          nextLevel.push(id);
+        }
       }
-      subPageToken = subResponse.data.nextPageToken ?? undefined;
-    } while (subPageToken);
+    }
+
+    currentLevel = nextLevel;
   }
 
   return allFiles;
