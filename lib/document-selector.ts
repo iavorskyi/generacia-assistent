@@ -2,8 +2,9 @@ import { getAdminDb } from "@/lib/firebase-admin";
 import { DocumentCategory } from "@/types";
 import { FieldValue } from "firebase-admin/firestore";
 
-const DEFAULT_TOKEN_BUDGET = 50000;  // Claude Haiku (200k context, conservative)
-export const GEMINI_TOKEN_BUDGET  = 300000; // Gemini 2.5 Flash (1M context)
+const DEFAULT_TOKEN_BUDGET = 100000; // Claude Haiku (200k context) — ~16 avg docs
+export const GEMINI_TOKEN_BUDGET  = 250000; // Gemini 2.5 Flash (1M context) — ~39 avg docs
+const MAX_SINGLE_DOC_TOKENS       = 60000;  // Hard cap per document — prevents 225k outliers from crashing context
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 export interface SelectedDocument {
@@ -295,6 +296,10 @@ export async function selectDocuments(
   for (const doc of orderedMeta) {
     const isFilenameMatch = filenameMatchIds.has(doc.id);
     const isCategoryMatch = categoryMatchIds.has(doc.id);
+
+    // Hard per-document cap — skip outlier docs (e.g. 225k-token full textbooks)
+    // that would overflow Claude/Gemini context regardless of budget
+    if (doc.tokenCount > MAX_SINGLE_DOC_TOKENS) continue;
 
     if (isCategoryMatch) {
       // Always include category matches — they directly answer the query intent
