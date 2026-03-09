@@ -19,8 +19,8 @@ export const CHUNK_THRESHOLD_TOKENS = 60_000; // ~240k chars
 /** Max chunks from the same parent included in a single context window. */
 export const MAX_CHUNKS_PER_PARENT = 3;
 
-const CHUNK_SIZE_CHARS    = 40_000; // ~10k tokens per chunk
-const CHUNK_OVERLAP_CHARS =  2_000; // ~500 tokens of context overlap
+const CHUNK_SIZE_CHARS    = 200_000; // ~50k tokens per chunk
+const CHUNK_OVERLAP_CHARS =   5_000; // ~1250 tokens of context overlap
 
 export interface DocChunk {
   content: string;
