@@ -4,6 +4,7 @@ export type DocumentCategory =
   | "policy"
   | "finance"
   | "legal"
+  | "regulations"   // Ukrainian/national normative docs: ПУЕ, ДБН, ДСТУ, НПАОП …
   | "general";
 
 export type DocumentSourceType = "file" | "web" | "notion";

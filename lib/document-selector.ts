@@ -138,6 +138,49 @@ export function detectQueryCategory(query: string): DocumentCategory | null {
         "intellectual property",
       ],
     },
+    {
+      // Ukrainian/national normative documents: ПУЕ, ДБН, ДСТУ, НПАОП …
+      // Queries about electrical installation rules, mandatory standards,
+      // RCDs/circuit breakers, wiring requirements, grounding, bathroom safety, etc.
+      category: "regulations",
+      keywords: [
+        // document abbreviations (direct reference)
+        "пуе",
+        "дбн",
+        "дсту",
+        "нпаоп",
+        // Ukrainian electrical installation terms
+        "пзв",                       // ПЗВ = пристрій захисного вімкнення (RCD)
+        "захисного вимкнення",
+        "струм витоку",
+        "диференційн",               // диференційний автомат / реле
+        "занулення",
+        "заземлення",
+        "захисний провідник",
+        "pe провідник",
+        "електроустановк",           // електроустановка / електроустановок
+        "кабельна лінія",
+        "перетин провід",            // перетин проводу / провідника
+        "переріз кабел",
+        "автоматичний вимикач",
+        "вимикач навантаження",
+        "пристрій захист",           // пристрій захисту / захисного вімкнення
+        "санвузол",                  // bathroom wiring rules
+        "ванна кімната",
+        "вологе приміщення",
+        "обов'язков",                // "є обов'язковим" — mandatory installation
+        "обовязков",
+        "норми встановлення",
+        "правила монтажу",
+        "вимоги до монтажу",
+        "технічні вимоги",
+        "нормативн",                 // нормативний / нормативного / нормативних …
+        // English equivalents
+        "regulation",
+        "standard",
+        "mandatory",
+      ],
+    },
   ];
 
   for (const { category, keywords } of patterns) {

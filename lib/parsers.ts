@@ -82,6 +82,22 @@ export function detectCategory(
     return "legal";
   }
 
+  // Ukrainian / national normative documents: ПУЕ, ДБН, ДСТУ, НПАОП, etc.
+  if (
+    lower.includes("пуе") ||
+    lower.includes("pue") ||
+    lower.includes("дбн") ||
+    lower.includes("дсту") ||
+    lower.includes("нпаоп") ||
+    lower.includes("правила улаштування") ||
+    lower.includes("будівельні норми") ||
+    lower.includes("державний стандарт") ||
+    lower.includes("технічний регламент") ||
+    lower.includes("норми та правила")
+  ) {
+    return "regulations";
+  }
+
   return "general";
 }
 
@@ -101,11 +117,15 @@ export function calculatePriority(
   // Ukrainian: price list and stock files are operationally critical
   if (lower.includes("прайс") || lower.includes("прайслист")) return 85;
   if (lower.includes("склад") || lower.includes("залишок") || lower.includes("наявніст")) return 80;
+  // Ukrainian normative docs — high baseline so they beat generic technical manuals
+  if (lower.includes("пуе") || lower.includes("pue")) return 85;
+  if (lower.includes("дбн") || lower.includes("дсту") || lower.includes("нпаоп")) return 80;
 
   // Category-based defaults
   const categoryDefaults: Record<DocumentCategory, number> = {
     hr: 70,
     policy: 65,
+    regulations: 65,  // normative docs are important reference material
     legal: 65,
     finance: 60,
     engineering: 55,
