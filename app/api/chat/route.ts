@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getAdminDb } from "@/lib/firebase-admin";
-import { selectDocuments } from "@/lib/document-selector";
+import { selectDocuments, GEMINI_TOKEN_BUDGET } from "@/lib/document-selector";
 import { chatWithCachedContext, calculateCost as calculateCostClaude, ChatMessage } from "@/lib/claude";
 import { chatWithContext as chatWithGemini, calculateCost as calculateCostGemini } from "@/lib/gemini";
 import { FieldValue } from "firebase-admin/firestore";
@@ -50,10 +50,19 @@ export async function POST(request: NextRequest) {
     convRef = db.collection("conversations").doc();
   }
 
+  // Read active AI provider first — it determines the token budget for doc selection
+  const settingsDoc = await db.collection("settings").doc("ai").get();
+  const provider = (settingsDoc.data()?.provider as "claude" | "gemini") ?? "claude";
+
+  // Gemini 2.5 Flash has a 1M context → allow up to 300k tokens of documents.
+  // Claude Haiku has a 200k context → stay conservative at 50k.
+  const tokenBudget = provider === "gemini" ? GEMINI_TOKEN_BUDGET : undefined;
+
   // Select relevant documents (with cache awareness)
   const { documents, allDocumentNames, fromCache } = await selectDocuments(
     query,
-    convRef.id === conversationId ? conversationId : null
+    convRef.id === conversationId ? conversationId : null,
+    tokenBudget
   );
 
   if (documents.length === 0) {
@@ -65,10 +74,6 @@ export async function POST(request: NextRequest) {
       { status: 404 }
     );
   }
-
-  // Read active AI provider from Firestore settings
-  const settingsDoc = await db.collection("settings").doc("ai").get();
-  const provider = (settingsDoc.data()?.provider as "claude" | "gemini") ?? "claude";
 
   // Call the active AI provider
   const result = provider === "gemini"

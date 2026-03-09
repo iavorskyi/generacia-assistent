@@ -2,7 +2,8 @@ import { getAdminDb } from "@/lib/firebase-admin";
 import { DocumentCategory } from "@/types";
 import { FieldValue } from "firebase-admin/firestore";
 
-const MAX_TOKEN_BUDGET = 50000;
+const DEFAULT_TOKEN_BUDGET = 50000;  // Claude Haiku (200k context, conservative)
+export const GEMINI_TOKEN_BUDGET  = 300000; // Gemini 2.5 Flash (1M context)
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 export interface SelectedDocument {
@@ -150,8 +151,10 @@ export interface SelectDocumentsResult {
 
 export async function selectDocuments(
   query: string,
-  conversationId?: string | null
+  conversationId?: string | null,
+  tokenBudget: number = DEFAULT_TOKEN_BUDGET
 ): Promise<SelectDocumentsResult> {
+  const MAX_TOKEN_BUDGET = tokenBudget;
   const db = getAdminDb();
 
   // 1. Fetch metadata for ALL documents (no content field — lightweight)
