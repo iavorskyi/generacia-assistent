@@ -220,6 +220,109 @@ function applySort<T>(
   });
 }
 
+// ─── TableToolbar ──────────────────────────────────────────────────────────────
+// Defined outside AdminPage so React never remounts it on parent re-renders
+// (an inner function component gets a new identity every render → input loses focus).
+
+function TableToolbar({
+  search, onSearch,
+  catFilter, onCatFilter,
+  statusFilter, onStatusFilter, statusOptions,
+  onRefresh, refreshLoading,
+  selectedCount,
+  onDelete, onSync,
+  syncProgress,
+  extraLeft,
+}: {
+  search: string; onSearch: (v: string) => void;
+  catFilter: string; onCatFilter: (v: string) => void;
+  statusFilter?: string; onStatusFilter?: (v: string) => void;
+  statusOptions?: { value: string; label: string }[];
+  onRefresh: () => void; refreshLoading: boolean;
+  selectedCount: number;
+  onDelete?: () => void; onSync?: () => void;
+  syncProgress?: { current: number; total: number } | null;
+  extraLeft?: React.ReactNode;
+}) {
+  return (
+    <div className="mb-3 space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Search */}
+        <div className="relative">
+          <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 1 0 5 11a6 6 0 0 0 12 0z" />
+          </svg>
+          <input
+            type="text" value={search} onChange={e => onSearch(e.target.value)}
+            placeholder="Пошук..."
+            className="pl-7 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg w-48 focus:outline-none focus:ring-1 focus:ring-[#ff8319] focus:border-[#ff8319]"
+          />
+        </div>
+
+        {/* Category filter */}
+        <select value={catFilter} onChange={e => onCatFilter(e.target.value)}
+          className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#ff8319] focus:border-[#ff8319]">
+          <option value="">Всі категорії</option>
+          {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+
+        {/* Status filter */}
+        {statusOptions && onStatusFilter && (
+          <select value={statusFilter ?? ""} onChange={e => onStatusFilter(e.target.value)}
+            className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#ff8319] focus:border-[#ff8319]">
+            <option value="">Всі статуси</option>
+            {statusOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        )}
+
+        {extraLeft}
+
+        <div className="flex-1" />
+
+        {/* Batch actions */}
+        {selectedCount > 0 && onDelete && (
+          <button onClick={onDelete}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+            Видалити ({selectedCount})
+          </button>
+        )}
+        {selectedCount > 0 && onSync && (
+          <button onClick={onSync}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+            Синхронізувати ({selectedCount})
+          </button>
+        )}
+
+        {/* Refresh */}
+        <button onClick={onRefresh} disabled={refreshLoading}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors">
+          <svg className={`w-3.5 h-3.5 ${refreshLoading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          Оновити
+        </button>
+      </div>
+
+      {/* Progress bar */}
+      {syncProgress && (
+        <div>
+          <div className="flex justify-between text-xs text-gray-500 mb-1">
+            <span>Синхронізація...</span>
+            <span>{syncProgress.current} / {syncProgress.total}</span>
+          </div>
+          <div className="w-full bg-gray-100 rounded-full h-1">
+            <div className="bg-[#ff8319] h-1 rounded-full transition-all"
+              style={{ width: `${(syncProgress.current / syncProgress.total) * 100}%` }} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 // ─── Main Component ────────────────────────────────────────────────────────────
 
 export default function AdminPage() {
@@ -979,105 +1082,6 @@ export default function AdminPage() {
         }}
         className="w-16 text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-white hover:border-gray-300 focus:outline-none focus:ring-1 focus:ring-[#ff8319] focus:border-[#ff8319] text-center"
       />
-    );
-  }
-
-  // Toolbar
-  function TableToolbar({
-    search, onSearch,
-    catFilter, onCatFilter,
-    statusFilter, onStatusFilter, statusOptions,
-    onRefresh, refreshLoading,
-    selectedCount,
-    onDelete, onSync,
-    syncProgress,
-    extraLeft,
-  }: {
-    search: string; onSearch: (v: string) => void;
-    catFilter: string; onCatFilter: (v: string) => void;
-    statusFilter?: string; onStatusFilter?: (v: string) => void;
-    statusOptions?: { value: string; label: string }[];
-    onRefresh: () => void; refreshLoading: boolean;
-    selectedCount: number;
-    onDelete?: () => void; onSync?: () => void;
-    syncProgress?: { current: number; total: number } | null;
-    extraLeft?: React.ReactNode;
-  }) {
-    return (
-      <div className="mb-3 space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Search */}
-          <div className="relative">
-            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 1 0 5 11a6 6 0 0 0 12 0z" />
-            </svg>
-            <input
-              type="text" value={search} onChange={e => onSearch(e.target.value)}
-              placeholder="Пошук..."
-              className="pl-7 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg w-48 focus:outline-none focus:ring-1 focus:ring-[#ff8319] focus:border-[#ff8319]"
-            />
-          </div>
-
-          {/* Category filter */}
-          <select value={catFilter} onChange={e => onCatFilter(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#ff8319] focus:border-[#ff8319]">
-            <option value="">Всі категорії</option>
-            {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-
-          {/* Status filter */}
-          {statusOptions && onStatusFilter && (
-            <select value={statusFilter ?? ""} onChange={e => onStatusFilter(e.target.value)}
-              className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#ff8319] focus:border-[#ff8319]">
-              <option value="">Всі статуси</option>
-              {statusOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          )}
-
-          {extraLeft}
-
-          <div className="flex-1" />
-
-          {/* Batch actions */}
-          {selectedCount > 0 && onDelete && (
-            <button onClick={onDelete}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-              Видалити ({selectedCount})
-            </button>
-          )}
-          {selectedCount > 0 && onSync && (
-            <button onClick={onSync}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-              Синхронізувати ({selectedCount})
-            </button>
-          )}
-
-          {/* Refresh */}
-          <button onClick={onRefresh} disabled={refreshLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors">
-            <svg className={`w-3.5 h-3.5 ${refreshLoading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            Оновити
-          </button>
-        </div>
-
-        {/* Progress bar */}
-        {syncProgress && (
-          <div>
-            <div className="flex justify-between text-xs text-gray-500 mb-1">
-              <span>Синхронізація...</span>
-              <span>{syncProgress.current} / {syncProgress.total}</span>
-            </div>
-            <div className="w-full bg-gray-100 rounded-full h-1">
-              <div className="bg-[#ff8319] h-1 rounded-full transition-all"
-                style={{ width: `${(syncProgress.current / syncProgress.total) * 100}%` }} />
-            </div>
-          </div>
-        )}
-      </div>
     );
   }
 
