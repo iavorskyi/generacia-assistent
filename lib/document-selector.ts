@@ -93,6 +93,23 @@ export function detectQueryCategory(query: string): DocumentCategory | null {
         "finance",
         "payment",
         "cost",
+        // Ukrainian: price, warehouse/stock, availability, remainder, quantity,
+        // supplier, order, goods, product, batch, price list
+        "прайс",
+        "ціна",
+        "вартість",
+        "склад",
+        "наявніст",
+        "залишок",
+        "кількість",
+        "постачальник",
+        "замовлення",
+        "товар",
+        "продукт",
+        "партія",
+        "на складі",
+        "в наявності",
+        "скільки",
       ],
     },
     {
@@ -258,22 +275,36 @@ export async function selectDocuments(
     (d) => !filenameMatchIds.has(d.id) && !categoryMatchIds.has(d.id)
   );
 
-  const orderedMeta = [...filenameMatches, ...categoryMatches, ...remaining];
+  // 4. Order: when query intent is clear (queryCategory detected), put category
+  //    matches FIRST so intent-relevant docs (e.g. price list) always fit in
+  //    the token budget before large filename-matched technical manuals.
+  //    Without clear intent, keep legacy order: filename → category → remaining.
+  const orderedMeta = queryCategory
+    ? [...categoryMatches, ...filenameMatches, ...remaining]
+    : [...filenameMatches, ...categoryMatches, ...remaining];
 
-  // 4. Select which docs fit within the token budget.
-  //    Filename-matched docs are always included (they're directly relevant).
-  //    Remaining budget is filled with category/general docs.
+  // 5. Select which docs fit within the token budget.
+  //    Category matches (intent-relevant) are always included.
+  //    Filename matches and remaining docs must fit within the budget.
   const selectedMeta: DocMeta[] = [];
   let tokenTotal = 0;
 
   for (const doc of orderedMeta) {
     const isFilenameMatch = filenameMatchIds.has(doc.id);
-    // Always include filename matches; others must fit in budget
-    if (isFilenameMatch || tokenTotal + doc.tokenCount <= MAX_TOKEN_BUDGET) {
+    const isCategoryMatch = categoryMatchIds.has(doc.id);
+
+    if (isCategoryMatch) {
+      // Always include category matches — they directly answer the query intent
+      selectedMeta.push(doc);
+      tokenTotal += doc.tokenCount;
+    } else if (tokenTotal + doc.tokenCount <= MAX_TOKEN_BUDGET) {
+      // Filename/remaining docs: only if they fit in the budget
       selectedMeta.push(doc);
       tokenTotal += doc.tokenCount;
     }
-    if (!isFilenameMatch && tokenTotal >= MAX_TOKEN_BUDGET * 0.9) break;
+
+    // Stop adding non-category docs once we're at 90% of budget
+    if (!isCategoryMatch && tokenTotal >= MAX_TOKEN_BUDGET * 0.9) break;
   }
 
   // 5. Fetch full content only for the selected docs
