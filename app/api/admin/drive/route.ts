@@ -26,16 +26,19 @@ async function getExistingDocByDriveId(
   const snapshot = await db
     .collection("documents")
     .where("driveFileId", "==", driveFileId)
-    .limit(1)
     .get();
 
   if (snapshot.empty) return null;
 
-  const doc = snapshot.docs[0];
+  // Skip chunk docs — older syncs may have written driveFileId onto chunks too.
+  // The parent is the doc without isChunk: true.
+  const parent = snapshot.docs.find((d) => !d.data().isChunk);
+  if (!parent) return null;
+
   return {
-    id:               doc.id,
-    driveModifiedTime: doc.data().driveModifiedTime,
-    chunkIds:         doc.data().chunkIds ?? [],
+    id:                parent.id,
+    driveModifiedTime: parent.data().driveModifiedTime,
+    chunkIds:          parent.data().chunkIds ?? [],
   };
 }
 
@@ -165,7 +168,9 @@ export async function POST(req: Request) {
       category:    parsed.category,
       priority:    parsed.priority,
       sourceType:  "drive",
-      driveFileId: fileId,
+      // Note: driveFileId is intentionally NOT stored on chunk docs.
+      // Only the parent document carries driveFileId, which keeps
+      // getExistingDocByDriveId from accidentally matching a chunk.
       sourceUrl:   driveSourceUrl,
     };
 

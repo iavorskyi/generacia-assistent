@@ -53,7 +53,20 @@ export function detectCategory(
     lower.includes("expense") ||
     lower.includes("invoice") ||
     lower.includes("reimburs") ||
-    lower.includes("payroll")
+    lower.includes("payroll") ||
+    // Ukrainian: price list, warehouse, stock, cost, quantity, supplier, order
+    lower.includes("прайс") ||
+    lower.includes("ціна") ||
+    lower.includes("вартість") ||
+    lower.includes("склад") ||
+    lower.includes("наявніст") ||
+    lower.includes("залишок") ||
+    lower.includes("кількість") ||
+    lower.includes("постачальник") ||
+    lower.includes("замовлення") ||
+    lower.includes("товар") ||
+    lower.includes("продукт") ||
+    lower.includes("партія")
   ) {
     return "finance";
   }
@@ -85,6 +98,9 @@ export function calculatePriority(
   if (lower.includes("onboarding") || lower.includes("getting-started"))
     return 80;
   if (lower.includes("procedure") || lower.includes("process")) return 75;
+  // Ukrainian: price list and stock files are operationally critical
+  if (lower.includes("прайс") || lower.includes("прайслист")) return 85;
+  if (lower.includes("склад") || lower.includes("залишок") || lower.includes("наявніст")) return 80;
 
   // Category-based defaults
   const categoryDefaults: Record<DocumentCategory, number> = {
@@ -114,6 +130,69 @@ export async function parseDOCX(buffer: Buffer): Promise<string> {
   return result.value.trim();
 }
 
+// Parse CSV / Excel (.xlsx, .xls) using SheetJS — converts to markdown tables
+export async function parseSpreadsheet(
+  buffer: Buffer,
+  filename: string
+): Promise<string> {
+  const XLSX = await import("xlsx");
+  const MAX_ROWS_PER_SHEET = 500;
+
+  const isCsv = filename.toLowerCase().endsWith(".csv");
+  const workbook = isCsv
+    ? XLSX.read(buffer.toString("utf-8"), { type: "string" })
+    : XLSX.read(buffer, { type: "buffer" });
+
+  const sections: string[] = [];
+  const sheetCount = workbook.SheetNames.length;
+
+  for (const sheetName of workbook.SheetNames) {
+    const worksheet = workbook.Sheets[sheetName];
+    const rows: unknown[][] = XLSX.utils.sheet_to_json(worksheet, {
+      header: 1,
+      raw: false, // return formatted values (dates as strings, not serial numbers)
+      defval: "",
+      blankrows: false,
+    });
+
+    // Skip entirely empty sheets
+    const nonEmptyRows = rows.filter((row) =>
+      row.some((cell) => String(cell).trim() !== "")
+    );
+    if (nonEmptyRows.length === 0) continue;
+
+    const sectionParts: string[] = [];
+    if (sheetCount > 1) sectionParts.push(`## Sheet: "${sheetName}"\n`);
+
+    const headerRow = nonEmptyRows[0];
+    const dataRows = nonEmptyRows.slice(1);
+    const totalDataRows = dataRows.length;
+    const cappedDataRows = dataRows.slice(0, MAX_ROWS_PER_SHEET);
+
+    // Escape pipe characters and inline newlines so markdown table stays valid
+    const escape = (cell: unknown) =>
+      String(cell ?? "")
+        .replace(/\|/g, "\\|")
+        .replace(/\n/g, " ");
+
+    sectionParts.push(`| ${headerRow.map(escape).join(" | ")} |`);
+    sectionParts.push(`| ${headerRow.map(() => "---").join(" | ")} |`);
+    cappedDataRows.forEach((row) =>
+      sectionParts.push(`| ${row.map(escape).join(" | ")} |`)
+    );
+
+    if (totalDataRows > MAX_ROWS_PER_SHEET) {
+      sectionParts.push(
+        `\n[Table truncated: showing ${MAX_ROWS_PER_SHEET} of ${totalDataRows} rows]`
+      );
+    }
+
+    sections.push(sectionParts.join("\n"));
+  }
+
+  return sections.join("\n\n");
+}
+
 export interface ParsedDocument {
   content: string;
   tokenCount: number;
@@ -139,6 +218,8 @@ export async function parseFile(
     content = await parseDOCX(buffer);
   } else if (ext === "txt" || ext === "md") {
     content = buffer.toString("utf-8").trim();
+  } else if (ext === "csv" || ext === "xlsx" || ext === "xls") {
+    content = await parseSpreadsheet(buffer, filename);
   } else {
     throw new Error(`Unsupported file type: .${ext}`);
   }

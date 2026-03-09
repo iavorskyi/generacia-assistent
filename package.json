@@ -22,7 +22,8 @@
     "pdf-parse": "^1.1.1",
     "react": "^18",
     "react-dom": "^18",
-    "react-markdown": "^9.0.3"
+    "react-markdown": "^9.0.3",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/dotenv": "^6.1.1",

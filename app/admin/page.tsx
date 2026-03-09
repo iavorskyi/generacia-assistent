@@ -83,6 +83,7 @@ interface NotionTableRow {
   status: "new" | "update" | "unchanged" | "orphaned";
   documentId?: string;
   category?: DocumentCategory;
+  priority?: number;
   tokenCount?: number;
 }
 
@@ -413,6 +414,7 @@ export default function AdminPage() {
           status: page.status,
           documentId: fsDoc?.id,
           category: fsDoc?.category,
+          priority: fsDoc?.priority,
           tokenCount: fsDoc?.tokenCount,
         });
       }
@@ -428,6 +430,7 @@ export default function AdminPage() {
             status: "orphaned",
             documentId: fsDoc.id,
             category: fsDoc.category,
+            priority: fsDoc.priority,
             tokenCount: fsDoc.tokenCount,
           });
         }
@@ -532,6 +535,38 @@ export default function AdminPage() {
   const updateWebCategory = async (docId: string, category: DocumentCategory) => {
     setWebSources(prev => prev.map(d => d.id === docId ? { ...d, category } : d));
     await updateDocumentCategory(docId, category);
+  };
+
+  // ─── Update priority ─────────────────────────────────────────────────────────
+
+  const updateDocumentPriority = async (documentId: string, priority: number) => {
+    await fetch(`/api/admin/documents/${documentId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ priority }),
+    });
+  };
+
+  const updateDrivePriority = async (row: DriveTableRow, priority: number) => {
+    if (!row.documentId) return;
+    setDriveRows(prev => prev.map(r => r.driveFileId === row.driveFileId ? { ...r, priority } : r));
+    await updateDocumentPriority(row.documentId, priority);
+  };
+
+  const updateNotionPriority = async (row: NotionTableRow, priority: number) => {
+    if (!row.documentId) return;
+    setNotionRows(prev => prev.map(r => r.notionPageId === row.notionPageId ? { ...r, priority } : r));
+    await updateDocumentPriority(row.documentId, priority);
+  };
+
+  const updateFilePriority = async (docId: string, priority: number) => {
+    setFileDocs(prev => prev.map(d => d.id === docId ? { ...d, priority } : d));
+    await updateDocumentPriority(docId, priority);
+  };
+
+  const updateWebPriority = async (docId: string, priority: number) => {
+    setWebSources(prev => prev.map(d => d.id === docId ? { ...d, priority } : d));
+    await updateDocumentPriority(docId, priority);
   };
 
   // ─── Delete ──────────────────────────────────────────────────────────────────
@@ -921,6 +956,32 @@ export default function AdminPage() {
     );
   }
 
+  function PriorityInput({ value, documentId, onChange }: {
+    value: number | undefined;
+    documentId: string | undefined;
+    onChange: (priority: number) => void;
+  }) {
+    const [local, setLocal] = useState(String(value ?? ""));
+    useEffect(() => { setLocal(String(value ?? "")); }, [value]);
+    if (!documentId) return <span className="text-gray-300 text-xs italic">auto</span>;
+    return (
+      <input
+        type="number"
+        min={1}
+        max={100}
+        value={local}
+        onClick={e => e.stopPropagation()}
+        onChange={e => setLocal(e.target.value)}
+        onBlur={() => {
+          const n = parseInt(local, 10);
+          if (!isNaN(n) && n >= 1 && n <= 100) onChange(n);
+          else setLocal(String(value ?? ""));
+        }}
+        className="w-16 text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-white hover:border-gray-300 focus:outline-none focus:ring-1 focus:ring-[#ff8319] focus:border-[#ff8319] text-center"
+      />
+    );
+  }
+
   // Toolbar
   function TableToolbar({
     search, onSearch,
@@ -1184,6 +1245,7 @@ export default function AdminPage() {
                         </th>
                         <SortTh label="Назва" sortKey="filename" current={fileSort} onToggle={() => toggleSort(setFileSort, "filename")} />
                         <SortTh label="Категорія" sortKey="category" current={fileSort} onToggle={() => toggleSort(setFileSort, "category")} />
+                        <SortTh label="Пріоритет" sortKey="priority" current={fileSort} onToggle={() => toggleSort(setFileSort, "priority")} />
                         <SortTh label="Завантажено" sortKey="uploadedAt" current={fileSort} onToggle={() => toggleSort(setFileSort, "uploadedAt")} />
                         <SortTh label="Токени" sortKey="tokenCount" current={fileSort} onToggle={() => toggleSort(setFileSort, "tokenCount")} />
                         <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Дії</th>
@@ -1201,6 +1263,9 @@ export default function AdminPage() {
                           <td className="px-3 py-2.5 font-medium text-gray-900 max-w-xs truncate">{doc.filename}</td>
                           <td className="px-3 py-2.5">
                             <CategorySelect value={doc.category} documentId={doc.id} onChange={cat => updateFileCategory(doc.id, cat)} />
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <PriorityInput value={doc.priority} documentId={doc.id} onChange={p => updateFilePriority(doc.id, p)} />
                           </td>
                           <td className="px-3 py-2.5 text-gray-500 whitespace-nowrap">{formatDate(doc.uploadedAt)}</td>
                           <td className="px-3 py-2.5 text-gray-500">{doc.tokenCount?.toLocaleString() ?? "—"}</td>
@@ -1299,6 +1364,7 @@ export default function AdminPage() {
                       </th>
                       <SortTh label="Назва" sortKey="name" current={driveSort} onToggle={() => toggleSort(setDriveSort, "name")} />
                       <SortTh label="Категорія" sortKey="category" current={driveSort} onToggle={() => toggleSort(setDriveSort, "category")} />
+                      <SortTh label="Пріоритет" sortKey="priority" current={driveSort} onToggle={() => toggleSort(setDriveSort, "priority")} />
                       <SortTh label="Змінено" sortKey="modifiedTime" current={driveSort} onToggle={() => toggleSort(setDriveSort, "modifiedTime")} />
                       <SortTh label="Розмір" sortKey="size" current={driveSort} onToggle={() => toggleSort(setDriveSort, "size")} />
                       <SortTh label="Токени" sortKey="tokenCount" current={driveSort} onToggle={() => toggleSort(setDriveSort, "tokenCount")} />
@@ -1323,6 +1389,9 @@ export default function AdminPage() {
                           <td className="px-3 py-2.5">
                             <CategorySelect value={row.category} documentId={row.documentId}
                               onChange={cat => updateDriveCategory(row, cat)} />
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <PriorityInput value={row.priority} documentId={row.documentId} onChange={p => updateDrivePriority(row, p)} />
                           </td>
                           <td className="px-3 py-2.5 text-gray-500 whitespace-nowrap text-xs">
                             {row.modifiedTime ? new Date(row.modifiedTime).toLocaleDateString("uk-UA") : "—"}
@@ -1453,6 +1522,7 @@ export default function AdminPage() {
                         </th>
                         <SortTh label="Назва / URL" sortKey="filename" current={webSort} onToggle={() => toggleSort(setWebSort, "filename")} />
                         <SortTh label="Категорія" sortKey="category" current={webSort} onToggle={() => toggleSort(setWebSort, "category")} />
+                        <SortTh label="Пріоритет" sortKey="priority" current={webSort} onToggle={() => toggleSort(setWebSort, "priority")} />
                         <SortTh label="Оновлено" sortKey="lastFetched" current={webSort} onToggle={() => toggleSort(setWebSort, "lastFetched")} />
                         <SortTh label="Токени" sortKey="tokenCount" current={webSort} onToggle={() => toggleSort(setWebSort, "tokenCount")} />
                         <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Статус</th>
@@ -1474,6 +1544,9 @@ export default function AdminPage() {
                           </td>
                           <td className="px-3 py-2.5">
                             <CategorySelect value={src.category} documentId={src.id} onChange={cat => updateWebCategory(src.id, cat)} />
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <PriorityInput value={src.priority} documentId={src.id} onChange={p => updateWebPriority(src.id, p)} />
                           </td>
                           <td className="px-3 py-2.5 text-gray-500 whitespace-nowrap text-xs">{formatDate(src.lastFetched)}</td>
                           <td className="px-3 py-2.5 text-gray-500">{src.tokenCount?.toLocaleString() ?? "—"}</td>
@@ -1581,6 +1654,7 @@ export default function AdminPage() {
                       </th>
                       <SortTh label="Назва" sortKey="title" current={notionSort} onToggle={() => toggleSort(setNotionSort, "title")} />
                       <SortTh label="Категорія" sortKey="category" current={notionSort} onToggle={() => toggleSort(setNotionSort, "category")} />
+                      <SortTh label="Пріоритет" sortKey="priority" current={notionSort} onToggle={() => toggleSort(setNotionSort, "priority")} />
                       <SortTh label="Редаговано" sortKey="lastEdited" current={notionSort} onToggle={() => toggleSort(setNotionSort, "lastEdited")} />
                       <SortTh label="Токени" sortKey="tokenCount" current={notionSort} onToggle={() => toggleSort(setNotionSort, "tokenCount")} />
                       <SortTh label="Статус" sortKey="status" current={notionSort} onToggle={() => toggleSort(setNotionSort, "status")} />
@@ -1610,6 +1684,9 @@ export default function AdminPage() {
                           <td className="px-3 py-2.5">
                             <CategorySelect value={row.category} documentId={row.documentId}
                               onChange={cat => updateNotionCategory(row, cat)} />
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <PriorityInput value={row.priority} documentId={row.documentId} onChange={p => updateNotionPriority(row, p)} />
                           </td>
                           <td className="px-3 py-2.5 text-gray-500 whitespace-nowrap text-xs">
                             {row.lastEdited ? new Date(row.lastEdited).toLocaleDateString("uk-UA") : "—"}

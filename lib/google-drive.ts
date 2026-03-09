@@ -10,6 +10,9 @@ const SUPPORTED_MIME_TYPES = [
   // Google Workspace native types (exported on download)
   "application/vnd.google-apps.document",
   "application/vnd.google-apps.spreadsheet",
+  // Excel files (downloaded directly as binary)
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
+  "application/vnd.ms-excel", // .xls
 ];
 
 const MIME_TO_EXT: Record<string, string> = {
@@ -21,7 +24,10 @@ const MIME_TO_EXT: Record<string, string> = {
   "text/markdown": "md",
   "text/x-markdown": "md",
   "application/vnd.google-apps.document": "docx",
-  "application/vnd.google-apps.spreadsheet": "txt",
+  "application/vnd.google-apps.spreadsheet": "csv", // exported as CSV by Drive
+  // Excel files
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  "application/vnd.ms-excel": "xls",
 };
 
 // Google Workspace files must be exported (not downloaded directly)

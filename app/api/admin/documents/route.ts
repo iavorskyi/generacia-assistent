@@ -25,10 +25,14 @@ export async function GET(request: NextRequest) {
 
   const snapshot = await query.get();
 
-  const documents = snapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...doc.data(),
-  }));
+  // Exclude chunk sub-documents — they are implementation details and should
+  // not appear in the admin document table. Only parent docs are listed.
+  const documents = snapshot.docs
+    .filter((doc) => !doc.data().isChunk)
+    .map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
 
   return NextResponse.json({ documents });
 }
