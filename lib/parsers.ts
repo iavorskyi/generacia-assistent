@@ -156,7 +156,7 @@ export async function parseSpreadsheet(
   filename: string
 ): Promise<string> {
   const XLSX = await import("xlsx");
-  const MAX_ROWS_PER_SHEET = 500;
+  const MAX_ROWS_PER_SHEET = 2000;
 
   const isCsv = filename.toLowerCase().endsWith(".csv");
   const workbook = isCsv
