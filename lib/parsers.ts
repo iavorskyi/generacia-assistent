@@ -189,16 +189,39 @@ export async function parseSpreadsheet(
     const totalDataRows = dataRows.length;
     const cappedDataRows = dataRows.slice(0, MAX_ROWS_PER_SHEET);
 
+    // Detect columns that are completely empty across ALL data rows and drop them.
+    // This removes placeholder columns (e.g. "Стовпець 11–14" with 0 values)
+    // that waste tokens without providing any information.
+    const colCount = (headerRow as unknown[]).length;
+    const usedCols = new Set<number>();
+    // Always keep columns that have a non-empty header
+    (headerRow as unknown[]).forEach((h, i) => {
+      if (String(h ?? "").trim() !== "") usedCols.add(i);
+    });
+    // Mark a column as "used" if any data row has a value in it
+    for (const row of cappedDataRows) {
+      (row as unknown[]).forEach((cell, i) => {
+        if (String(cell ?? "").trim() !== "") usedCols.add(i);
+      });
+    }
+    // Build the ordered list of column indices to keep
+    const keepCols = Array.from({ length: colCount }, (_, i) => i).filter((i) =>
+      usedCols.has(i)
+    );
+
     // Escape pipe characters and inline newlines so markdown table stays valid
     const escape = (cell: unknown) =>
       String(cell ?? "")
         .replace(/\|/g, "\\|")
         .replace(/\n/g, " ");
 
-    sectionParts.push(`| ${headerRow.map(escape).join(" | ")} |`);
-    sectionParts.push(`| ${headerRow.map(() => "---").join(" | ")} |`);
+    const pickCols = (row: unknown[]) =>
+      keepCols.map((i) => escape((row as unknown[])[i] ?? ""));
+
+    sectionParts.push(`| ${pickCols(headerRow as unknown[]).join(" | ")} |`);
+    sectionParts.push(`| ${keepCols.map(() => "---").join(" | ")} |`);
     cappedDataRows.forEach((row) =>
-      sectionParts.push(`| ${row.map(escape).join(" | ")} |`)
+      sectionParts.push(`| ${pickCols(row as unknown[]).join(" | ")} |`)
     );
 
     if (totalDataRows > MAX_ROWS_PER_SHEET) {
