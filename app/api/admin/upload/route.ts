@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getAdminDb } from "@/lib/firebase-admin";
 import { parseFile } from "@/lib/parsers";
+import { needsChunking, createChunks, saveChunks } from "@/lib/chunker";
 import { FieldValue } from "firebase-admin/firestore";
 
 export const maxDuration = 120; // 120s — allows time for Gemini OCR on scanned PDFs
@@ -33,27 +34,60 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer());
     const parsed = await parseFile(buffer, file.name);
 
+    const rawContent  = parsed.content;
+    const shouldChunk = needsChunking(rawContent);
+
+    // For chunked docs: store a short excerpt in the parent; full content in chunks.
+    const content = shouldChunk
+      ? rawContent.slice(0, 1_000) + `\n\n[Документ розбито на частини для ефективного пошуку]`
+      : rawContent;
+
     const db = getAdminDb();
     const docRef = await db.collection("documents").add({
-      filename: file.name,
-      content: parsed.content,
-      category: parsed.category,
-      priority: parsed.priority,
+      filename:   file.name,
+      content,
+      category:   parsed.category,
+      priority:   parsed.priority,
       tokenCount: parsed.tokenCount,
+      isChunked:  shouldChunk || null,
+      chunkIds:   [],
+      chunkCount: 0,
       uploadedBy: session.user.id,
       uploadedAt: FieldValue.serverTimestamp(),
       usageCount: 0,
-      lastUsed: null,
+      lastUsed:   null,
     });
+
+    if (shouldChunk) {
+      const chunks   = createChunks(rawContent);
+      const chunkIds = await saveChunks(docRef.id, chunks, {
+        filename:   file.name,
+        category:   parsed.category,
+        priority:   parsed.priority,
+        sourceType: "upload",
+      });
+      await docRef.update({ chunkIds, chunkCount: chunkIds.length });
+
+      return NextResponse.json({
+        success: true,
+        documentId: docRef.id,
+        filename:   file.name,
+        category:   parsed.category,
+        priority:   parsed.priority,
+        tokenCount: parsed.tokenCount,
+        chunked:    true,
+        chunkCount: chunkIds.length,
+      });
+    }
 
     return NextResponse.json({
       success: true,
-      documentId: docRef.id,
-      filename: file.name,
-      category: parsed.category,
-      priority: parsed.priority,
-      tokenCount: parsed.tokenCount,
-      characterCount: parsed.content.length,
+      documentId:     docRef.id,
+      filename:       file.name,
+      category:       parsed.category,
+      priority:       parsed.priority,
+      tokenCount:     parsed.tokenCount,
+      characterCount: rawContent.length,
     });
   } catch (error) {
     console.error("Upload error:", error);

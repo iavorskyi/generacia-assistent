@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getAdminDb } from "@/lib/firebase-admin";
 import { parseFile } from "@/lib/parsers";
+import { needsChunking, createChunks, saveChunks, deleteChunks } from "@/lib/chunker";
 import {
   listFilesInFolder,
   downloadFileAsBuffer,
@@ -20,7 +21,7 @@ function getFolderId(): string | null {
 
 async function getExistingDocByDriveId(
   driveFileId: string
-): Promise<{ id: string; driveModifiedTime?: string } | null> {
+): Promise<{ id: string; driveModifiedTime?: string; chunkIds?: string[] } | null> {
   const db = getAdminDb();
   const snapshot = await db
     .collection("documents")
@@ -32,8 +33,9 @@ async function getExistingDocByDriveId(
 
   const doc = snapshot.docs[0];
   return {
-    id: doc.id,
+    id:               doc.id,
     driveModifiedTime: doc.data().driveModifiedTime,
+    chunkIds:         doc.data().chunkIds ?? [],
   };
 }
 
@@ -132,54 +134,103 @@ export async function POST(req: Request) {
     const filename = normalizeFilename(file);
     const parsed = await parseFile(buffer, filename);
 
-    // Firestore document limit is 1 MiB. Reserve ~100 KB for other fields.
+    const rawContent = parsed.content;
+    const driveSourceUrl = `https://drive.google.com/file/d/${fileId}/view`;
+    const shouldChunk = needsChunking(rawContent);
+
+    // Prepare parent document content.
+    // For chunked docs: store a short excerpt so admin UI can show a preview.
+    // Chunks hold the full content — no truncation needed there.
+    // For non-chunked docs: apply the legacy 900KB Firestore limit.
     const MAX_CONTENT_BYTES = 900_000;
-    let content = parsed.content;
+    let content = rawContent;
     let truncated = false;
-    if (Buffer.byteLength(content, "utf8") > MAX_CONTENT_BYTES) {
-      // Truncate to fit, cutting at a safe character boundary
-      content = Buffer.from(content, "utf8").slice(0, MAX_CONTENT_BYTES).toString("utf8");
+
+    if (shouldChunk) {
+      // Keep first 1 000 chars as preview; full content lives in chunks
+      content = rawContent.slice(0, 1_000) +
+        `\n\n[Документ розбито на частини для ефективного пошуку]`;
+    } else if (Buffer.byteLength(rawContent, "utf8") > MAX_CONTENT_BYTES) {
+      content = Buffer.from(rawContent, "utf8").slice(0, MAX_CONTENT_BYTES).toString("utf8");
       content += "\n\n[Вміст обрізано через обмеження розміру]";
       truncated = true;
     }
+
     const tokenCount = truncated
       ? Math.round(MAX_CONTENT_BYTES / 4)
-      : parsed.tokenCount;
+      : parsed.tokenCount;  // full count even for chunked (metadata only)
 
-    const driveSourceUrl = `https://drive.google.com/file/d/${fileId}/view`;
+    const chunkMeta = {
+      filename,
+      category:    parsed.category,
+      priority:    parsed.priority,
+      sourceType:  "drive",
+      driveFileId: fileId,
+      sourceUrl:   driveSourceUrl,
+    };
 
     if (existing) {
+      // Delete old chunks before writing new ones
+      if (existing.chunkIds?.length) {
+        await deleteChunks(existing.chunkIds);
+      }
+
       await db.collection("documents").doc(existing.id).update({
         filename,
         content,
-        category: parsed.category,
-        priority: parsed.priority,
+        category:          parsed.category,
+        priority:          parsed.priority,
         tokenCount,
         truncated,
-        driveFileId: fileId,
-        sourceUrl: driveSourceUrl,
+        isChunked:         shouldChunk || null,
+        chunkIds:          [],          // will be updated below if chunked
+        chunkCount:        0,
+        driveFileId:       fileId,
+        sourceUrl:         driveSourceUrl,
         driveModifiedTime: modifiedTime,
-        lastFetched: FieldValue.serverTimestamp(),
+        lastFetched:       FieldValue.serverTimestamp(),
       });
+
+      if (shouldChunk) {
+        const chunks   = createChunks(rawContent);
+        const chunkIds = await saveChunks(existing.id, chunks, chunkMeta);
+        await db.collection("documents").doc(existing.id).update({
+          chunkIds,
+          chunkCount: chunkIds.length,
+        });
+        return NextResponse.json({ status: "updated", chunked: true, chunkCount: chunkIds.length });
+      }
+
       return NextResponse.json({ status: "updated", truncated });
     } else {
-      await db.collection("documents").add({
+      const docRef = await db.collection("documents").add({
         filename,
         content,
-        category: parsed.category,
-        priority: parsed.priority,
+        category:          parsed.category,
+        priority:          parsed.priority,
         tokenCount,
         truncated,
-        uploadedBy: "drive-sync",
-        uploadedAt: FieldValue.serverTimestamp(),
-        usageCount: 0,
-        lastUsed: null,
-        sourceType: "drive",
-        driveFileId: fileId,
-        sourceUrl: driveSourceUrl,
+        isChunked:         shouldChunk || null,
+        chunkIds:          [],
+        chunkCount:        0,
+        uploadedBy:        "drive-sync",
+        uploadedAt:        FieldValue.serverTimestamp(),
+        usageCount:        0,
+        lastUsed:          null,
+        sourceType:        "drive",
+        driveFileId:       fileId,
+        sourceUrl:         driveSourceUrl,
         driveModifiedTime: modifiedTime,
-        lastFetched: FieldValue.serverTimestamp(),
+        lastFetched:       FieldValue.serverTimestamp(),
       });
+
+      if (shouldChunk) {
+        const chunks   = createChunks(rawContent);
+        const chunkIds = await saveChunks(docRef.id, chunks, chunkMeta);
+        await docRef.update({ chunkIds, chunkCount: chunkIds.length });
+        return NextResponse.json({ status: "added", chunked: true, chunkCount: chunkIds.length });
+      }
+
       return NextResponse.json({ status: "added", truncated });
     }
   } catch (error) {

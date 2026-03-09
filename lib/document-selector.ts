@@ -1,10 +1,11 @@
 import { getAdminDb } from "@/lib/firebase-admin";
 import { DocumentCategory } from "@/types";
 import { FieldValue } from "firebase-admin/firestore";
+import { MAX_CHUNKS_PER_PARENT } from "@/lib/chunker";
 
 const DEFAULT_TOKEN_BUDGET = 100000; // Claude Haiku (200k context) — ~16 avg docs
 export const GEMINI_TOKEN_BUDGET  = 250000; // Gemini 2.5 Flash (1M context) — ~39 avg docs
-const MAX_SINGLE_DOC_TOKENS       = 60000;  // Hard cap per document — prevents 225k outliers from crashing context
+const MAX_SINGLE_DOC_TOKENS       = 60000;  // Hard cap per doc — skips 225k outliers; they use chunks instead
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 export interface SelectedDocument {
@@ -14,6 +15,11 @@ export interface SelectedDocument {
   category: DocumentCategory;
   priority: number;
   tokenCount: number;
+  // Chunk metadata (present when the document is a chunk of a larger file)
+  isChunk?: boolean;
+  parentDocumentId?: string;
+  chunkIndex?: number;
+  totalChunks?: number;
   // Source identifiers (present for Drive/Notion/web-sourced documents)
   driveFileId?: string | null;
   sourceUrl?: string | null;
@@ -26,6 +32,11 @@ export interface DocMeta {
   category: string;
   priority: number;
   tokenCount: number;
+  // Chunk metadata
+  isChunk?: boolean;
+  isChunked?: boolean;      // true on the parent doc when chunks exist
+  parentDocumentId?: string;
+  chunkIndex?: number;
 }
 
 // Detect query category from question keywords
@@ -159,22 +170,30 @@ export async function selectDocuments(
   const db = getAdminDb();
 
   // 1. Fetch metadata for ALL documents (no content field — lightweight)
+  //    Include chunk fields so we can route correctly.
   const metaSnapshot = await db
     .collection("documents")
-    .select("filename", "category", "priority", "tokenCount")
+    .select("filename", "category", "priority", "tokenCount", "isChunk", "isChunked", "parentDocumentId", "chunkIndex")
     .orderBy("priority", "desc")
     .get();
 
   const allMeta: DocMeta[] = metaSnapshot.docs.map((d) => {
     const data = d.data();
     return {
-      id: d.id,
-      filename: data.filename as string,
-      category: data.category as string,
-      priority: data.priority as number,
-      tokenCount: data.tokenCount as number,
+      id:                d.id,
+      filename:          data.filename           as string,
+      category:          data.category           as string,
+      priority:          data.priority           as number,
+      tokenCount:        data.tokenCount         as number,
+      isChunk:           data.isChunk            as boolean | undefined,
+      isChunked:         data.isChunked          as boolean | undefined,
+      parentDocumentId:  data.parentDocumentId   as string  | undefined,
+      chunkIndex:        data.chunkIndex         as number  | undefined,
     };
   });
+
+  // Catalog shown to Claude & admin UI: only non-chunk parent docs
+  const allDocumentNames = allMeta.filter((d) => !d.isChunk);
 
   // 2. Check if conversation has a valid cache.
   //    Only use it if all filename-matched docs for this query are already cached.
@@ -226,7 +245,7 @@ export async function selectDocuments(
           .filter((d) => d.exists)
           .map((d) => ({ id: d.id, ...d.data() } as SelectedDocument));
 
-        return { documents, allDocumentNames: allMeta, fromCache: true };
+        return { documents, allDocumentNames, fromCache: true };
       }
       // Otherwise fall through and re-select with the new query
     }
@@ -290,16 +309,27 @@ export async function selectDocuments(
   // 5. Select which docs fit within the token budget.
   //    Category matches (intent-relevant) are always included.
   //    Filename matches and remaining docs must fit within the budget.
+  //    Chunk rules: skip chunked parents (use their chunks); limit chunks per parent.
   const selectedMeta: DocMeta[] = [];
   let tokenTotal = 0;
+  // Track how many chunks of each parent have been included
+  const chunkCountMap = new Map<string, number>();
 
   for (const doc of orderedMeta) {
-    const isFilenameMatch = filenameMatchIds.has(doc.id);
     const isCategoryMatch = categoryMatchIds.has(doc.id);
 
-    // Hard per-document cap — skip outlier docs (e.g. 225k-token full textbooks)
-    // that would overflow Claude/Gemini context regardless of budget
+    // Skip parent documents that have been chunked — use their chunks instead
+    if (doc.isChunked) continue;
+
+    // Hard per-document cap — safety net for un-chunked large docs
     if (doc.tokenCount > MAX_SINGLE_DOC_TOKENS) continue;
+
+    // Limit the number of chunks from the same parent in one context window
+    if (doc.isChunk && doc.parentDocumentId) {
+      const count = chunkCountMap.get(doc.parentDocumentId) ?? 0;
+      if (count >= MAX_CHUNKS_PER_PARENT) continue;
+      chunkCountMap.set(doc.parentDocumentId, count + 1);
+    }
 
     if (isCategoryMatch) {
       // Always include category matches — they directly answer the query intent
@@ -315,7 +345,7 @@ export async function selectDocuments(
     if (!isCategoryMatch && tokenTotal >= MAX_TOKEN_BUDGET * 0.9) break;
   }
 
-  // 5. Fetch full content only for the selected docs
+  // 6. Fetch full content only for the selected docs
   const fullDocs = await Promise.all(
     selectedMeta.map((m) => db.collection("documents").doc(m.id).get())
   );
@@ -323,7 +353,7 @@ export async function selectDocuments(
     .filter((d) => d.exists)
     .map((d) => ({ id: d.id, ...d.data() } as SelectedDocument));
 
-  // 6. Update usage stats for selected documents (fire and forget)
+  // 7. Update usage stats for selected documents (fire and forget)
   const batch = db.batch();
   for (const doc of selected) {
     const ref = db.collection("documents").doc(doc.id);
@@ -334,5 +364,5 @@ export async function selectDocuments(
   }
   await batch.commit().catch(() => {}); // non-critical
 
-  return { documents: selected, allDocumentNames: allMeta, fromCache: false };
+  return { documents: selected, allDocumentNames, fromCache: false };
 }

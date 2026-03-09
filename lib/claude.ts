@@ -40,12 +40,15 @@ function formatDocumentCatalog(allDocs: DocMeta[]): string {
 
 function formatDocumentsForContext(documents: SelectedDocument[]): string {
   return documents
-    .map(
-      (doc) =>
-        `<document name="${doc.filename}" category="${doc.category}" priority="${doc.priority}">
+    .map((doc) => {
+      // For chunk documents, add a chunk attribute so Claude knows it's a partial view
+      const chunkAttr = doc.isChunk && doc.totalChunks
+        ? ` chunk="${(doc.chunkIndex ?? 0) + 1}/${doc.totalChunks}"`
+        : "";
+      return `<document name="${doc.filename}" category="${doc.category}" priority="${doc.priority}"${chunkAttr}>
 ${doc.content}
-</document>`
-    )
+</document>`;
+    })
     .join("\n\n");
 }
 
