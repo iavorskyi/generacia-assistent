@@ -364,6 +364,16 @@ export default function AdminPage() {
   const [driveSyncProgress, setDriveSyncProgress] = useState<{ current: number; total: number } | null>(null);
   const [driveLoaded, setDriveLoaded] = useState(false);
 
+  // ── Drive auto-sync channel ──
+  const [driveAutoSync, setDriveAutoSync] = useState<{
+    channelId: string | null;
+    channelExpiry: number | null;
+    lastSyncAt: string | null;
+    lastSyncResult: { added: number; updated: number; unchanged: number; errors: string[] } | null;
+  } | null>(null);
+  const [driveRegisteringChannel, setDriveRegisteringChannel] = useState(false);
+  const [driveChannelError, setDriveChannelError] = useState<string | null>(null);
+
   // ── Notion table ──
   const [notionRows, setNotionRows] = useState<NotionTableRow[]>([]);
   const [notionLoading, setNotionLoading] = useState(false);
@@ -475,6 +485,7 @@ export default function AdminPage() {
         }
       }
 
+      setDriveAutoSync(driveData.autoSync ?? null);
       setDriveRows(rows);
       setDriveLoaded(true);
     } catch {
@@ -715,6 +726,27 @@ export default function AdminPage() {
     const ids = Array.from(webSelected);
     const ok = await bulkDelete(ids);
     if (ok) { setWebSelected(new Set()); await fetchWebSources(); }
+  };
+
+  // ─── Drive auto-sync channel ─────────────────────────────────────────────────
+
+  const registerDriveChannel = async () => {
+    setDriveRegisteringChannel(true);
+    setDriveChannelError(null);
+    try {
+      const res = await fetch("/api/admin/drive", { method: "PUT" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Не вдалося зареєструвати канал");
+      setDriveAutoSync(prev => ({
+        ...(prev ?? { lastSyncAt: null, lastSyncResult: null }),
+        channelId: data.channelId,
+        channelExpiry: data.channelExpiry,
+      }));
+    } catch (err) {
+      setDriveChannelError(err instanceof Error ? err.message : "Помилка реєстрації");
+    } finally {
+      setDriveRegisteringChannel(false);
+    }
   };
 
   // ─── Drive sync ──────────────────────────────────────────────────────────────
@@ -1316,6 +1348,59 @@ export default function AdminPage() {
                 </button>
               </div>
             </div>
+
+            {/* ── Auto-sync status ── */}
+            {driveLoaded && (() => {
+              const expiry = driveAutoSync?.channelExpiry ?? 0;
+              const isActive = expiry > Date.now();
+              const lastSync = driveAutoSync?.lastSyncAt ? new Date(driveAutoSync.lastSyncAt) : null;
+              const result = driveAutoSync?.lastSyncResult;
+              return (
+                <div className={`mb-4 flex items-start justify-between gap-4 px-4 py-3 rounded-xl border text-sm ${
+                  isActive ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-200"
+                }`}>
+                  <div className="flex flex-col gap-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-block w-2 h-2 rounded-full ${isActive ? "bg-green-500" : "bg-gray-400"}`} />
+                      <span className="font-medium text-gray-800">
+                        {isActive
+                          ? `Авто-синхронізація активна до ${new Date(expiry).toLocaleDateString("uk-UA")}`
+                          : "Авто-синхронізація не налаштована"}
+                      </span>
+                    </div>
+                    {lastSync && (
+                      <span className="text-gray-500 pl-4 text-xs">
+                        Остання синхронізація: {lastSync.toLocaleString("uk-UA")}
+                        {result && ` · +${result.added} додано, ${result.updated} оновлено`}
+                        {result?.errors?.length ? ` · ${result.errors.length} помилок` : ""}
+                      </span>
+                    )}
+                    {driveChannelError && (
+                      <span className="text-red-600 pl-4 text-xs">{driveChannelError}</span>
+                    )}
+                  </div>
+                  {!isActive && (
+                    <button
+                      onClick={registerDriveChannel}
+                      disabled={driveRegisteringChannel}
+                      className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors">
+                      {driveRegisteringChannel
+                        ? <span className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white" />
+                        : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>}
+                      {driveRegisteringChannel ? "Реєстрація..." : "Ввімкнути авто-синхронізацію"}
+                    </button>
+                  )}
+                  {isActive && (
+                    <button
+                      onClick={registerDriveChannel}
+                      disabled={driveRegisteringChannel}
+                      className="flex-shrink-0 text-xs text-gray-500 hover:text-gray-700 underline disabled:opacity-50">
+                      {driveRegisteringChannel ? "Оновлення..." : "Оновити канал"}
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
 
             {driveSyncProgress && (
               <div className="mb-4">
