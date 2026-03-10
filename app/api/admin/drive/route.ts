@@ -184,9 +184,30 @@ export async function PUT() {
       }
     }
 
-    // Get current change page token
+    // Detect whether the folder lives in a Shared Drive (Team Drive).
+    // For Shared Drives, drive.changes.watch() and getStartPageToken() require
+    // a driveId parameter — without it they default to the service account's
+    // My Drive, which won't see changes to Shared Drive files.
+    const folderId = getFolderId()!;
+    let sharedDriveId: string | undefined;
+    try {
+      const folderMeta = await drive.files.get({
+        fileId: folderId,
+        supportsAllDrives: true,
+        fields: "driveId",
+      });
+      sharedDriveId = folderMeta.data.driveId ?? undefined;
+      if (sharedDriveId) {
+        console.log("drive-channel: Shared Drive detected, driveId:", sharedDriveId);
+      }
+    } catch (e) {
+      console.warn("drive-channel: could not detect driveId:", e);
+    }
+
+    // Get current change page token for the correct scope
     const tokenRes = await drive.changes.getStartPageToken({
       supportsAllDrives: true,
+      ...(sharedDriveId ? { driveId: sharedDriveId } : {}),
     });
     const startPageToken = tokenRes.data.startPageToken!;
 
@@ -197,6 +218,7 @@ export async function PUT() {
       pageToken: startPageToken,
       supportsAllDrives: true,
       includeItemsFromAllDrives: true,
+      ...(sharedDriveId ? { driveId: sharedDriveId } : {}),
       requestBody: {
         id: channelId,
         type: "web_hook",
@@ -218,6 +240,7 @@ export async function PUT() {
           resourceId,
           channelExpiry: actualExpiry,
           startPageToken,
+          sharedDriveId: sharedDriveId ?? null,
           channelRegisteredAt: FieldValue.serverTimestamp(),
         },
         { merge: true }

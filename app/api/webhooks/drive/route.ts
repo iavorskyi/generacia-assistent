@@ -61,13 +61,15 @@ export async function POST(req: NextRequest) {
     return new NextResponse(null, { status: 200 });
   }
 
-  // 3. Read settings once: throttle check + startPageToken for targeted sync.
+  // 3. Read settings once: throttle check + startPageToken + sharedDriveId.
   let startPageToken: string | undefined;
+  let sharedDriveId: string | undefined;
   try {
     const settingsDoc = await db.collection("settings").doc("driveSync").get();
     if (settingsDoc.exists) {
       const data = settingsDoc.data()!;
       startPageToken = data.startPageToken as string | undefined;
+      sharedDriveId = data.sharedDriveId as string | undefined;
 
       const lastSyncAt = data.lastSyncAt as Timestamp | undefined;
       const syncPending = data.syncPending as boolean | undefined;
@@ -105,7 +107,7 @@ export async function POST(req: NextRequest) {
       console.log("drive-webhook: no startPageToken, running full sync fallback");
       result = await runDriveSync();
     } else {
-      result = await syncChangesFromPageToken(startPageToken);
+      result = await syncChangesFromPageToken(startPageToken, sharedDriveId);
     }
 
     await saveSyncResult(result);
@@ -138,8 +140,14 @@ export async function POST(req: NextRequest) {
  *
  * Persists the new startPageToken to Firestore before syncing, so even if sync
  * fails we don't reprocess the same changes on the next notification.
+ *
+ * For Shared Drives (Team Drives), `sharedDriveId` must be passed so the
+ * changes.list() call queries the correct changes feed (not My Drive).
  */
-async function syncChangesFromPageToken(startPageToken: string): Promise<SyncResult> {
+async function syncChangesFromPageToken(
+  startPageToken: string,
+  sharedDriveId?: string
+): Promise<SyncResult> {
   const drive = getDriveClient();
   const db = getAdminDb();
   const result: SyncResult = { added: 0, updated: 0, unchanged: 0, errors: [] };
@@ -161,6 +169,7 @@ async function syncChangesFromPageToken(startPageToken: string): Promise<SyncRes
       pageToken,
       supportsAllDrives: true,
       includeItemsFromAllDrives: true,
+      ...(sharedDriveId ? { driveId: sharedDriveId } : {}),
       fields:
         "nextPageToken, newStartPageToken, changes(fileId, removed, file(id, name, mimeType, modifiedTime, size, trashed))",
     });

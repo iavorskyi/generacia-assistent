@@ -51,6 +51,8 @@ export async function GET(request: NextRequest) {
       const data = settingsDoc.exists ? settingsDoc.data()! : {};
       const channelExpiry: number = data.channelExpiry ?? 0;
       const timeLeft = channelExpiry - Date.now();
+      // Reuse stored sharedDriveId (set during initial channel registration)
+      const sharedDriveId: string | undefined = data.sharedDriveId ?? undefined;
 
       if (timeLeft > RENEW_BEFORE_MS) {
         report.channelRenewal = `ok — expires in ${Math.round(timeLeft / 3_600_000)}h`;
@@ -66,9 +68,10 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        // Get fresh start page token
+        // Get fresh start page token for the correct scope
         const tokenRes = await drive.changes.getStartPageToken({
           supportsAllDrives: true,
+          ...(sharedDriveId ? { driveId: sharedDriveId } : {}),
         });
         const startPageToken = tokenRes.data.startPageToken!;
 
@@ -79,6 +82,7 @@ export async function GET(request: NextRequest) {
           pageToken: startPageToken,
           supportsAllDrives: true,
           includeItemsFromAllDrives: true,
+          ...(sharedDriveId ? { driveId: sharedDriveId } : {}),
           requestBody: {
             id: channelId,
             type: "web_hook",
