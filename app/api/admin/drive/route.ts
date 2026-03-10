@@ -6,6 +6,8 @@ import { DriveFile, getDriveClient, listFilesInFolder } from "@/lib/google-drive
 import {
   getExistingDocByDriveId,
   syncDriveFile,
+  runDriveSync,
+  saveSyncResult,
 } from "@/lib/drive-sync";
 import { FieldValue } from "firebase-admin/firestore";
 import { randomUUID } from "crypto";
@@ -218,11 +220,26 @@ export async function PUT() {
         { merge: true }
       );
 
+    // Run an immediate full sync so any files that existed before the channel
+    // was registered (or changed while it was inactive) get picked up right away.
+    // drive.changes.watch() only notifies about changes *after* startPageToken,
+    // so without this initial sync pre-existing new/updated files would be missed.
+    let initialSync = null;
+    try {
+      const syncResult = await runDriveSync();
+      await saveSyncResult(syncResult);
+      initialSync = syncResult;
+    } catch (syncErr) {
+      console.error("Drive channel: initial sync failed:", syncErr);
+      // Non-fatal — channel is registered, sync will retry via cron or next webhook
+    }
+
     return NextResponse.json({
       channelId,
       resourceId,
       channelExpiry: actualExpiry,
       expiresAt: new Date(actualExpiry).toISOString(),
+      initialSync,
     });
   } catch (error) {
     console.error("Drive channel registration error:", error);
