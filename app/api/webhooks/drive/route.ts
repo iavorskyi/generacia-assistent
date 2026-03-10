@@ -35,22 +35,26 @@ export async function POST(req: NextRequest) {
     return new NextResponse(null, { status: 401 });
   }
 
-  // 2. Sync type header — Google sends "sync" for the initial handshake ping,
-  //    not an actual file change. Acknowledge it and exit.
+  // 2. Stamp lastWebhookAt for ALL requests (including the initial "sync" ping)
+  //    so the admin UI can confirm Drive is reaching this endpoint.
   const syncType = req.headers.get("x-goog-resource-state");
-  if (syncType === "sync") {
-    return new NextResponse(null, { status: 200 });
-  }
-
-  // 3. Record that we received a webhook (diagnostic — visible in admin UI)
-  //    and throttle if a sync already ran recently.
   const db = getAdminDb();
   try {
-    // Always stamp lastWebhookAt so we can confirm Drive is reaching this endpoint
     await db.collection("settings").doc("driveSync").set(
       { lastWebhookAt: FieldValue.serverTimestamp() },
       { merge: true }
     );
+  } catch (err) {
+    console.error("drive-webhook: failed to stamp lastWebhookAt:", err);
+  }
+
+  // Acknowledge the initial handshake ping and exit — no sync needed.
+  if (syncType === "sync") {
+    return new NextResponse(null, { status: 200 });
+  }
+
+  // 3. Throttle if a sync already ran recently.
+  try {
 
     const settingsDoc = await db.collection("settings").doc("driveSync").get();
     if (settingsDoc.exists) {
