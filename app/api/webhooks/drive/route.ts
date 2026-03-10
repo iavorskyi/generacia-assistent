@@ -7,16 +7,24 @@
  * Security:
  *   - Verified via X-Goog-Channel-Token header = DRIVE_WEBHOOK_SECRET env var
  *
+ * Sync strategy:
+ *   - Uses drive.changes.list() with stored startPageToken to get ONLY the files
+ *     that changed, with their authoritative metadata from Drive's change log.
+ *     This avoids the Drive files.list() timing issue where the API may return
+ *     stale modifiedTime immediately after a change notification is delivered.
+ *   - Falls back to runDriveSync() (full folder scan) if no startPageToken stored.
+ *
  * Throttling:
- *   - If last sync ran < 5 minutes ago, returns 200 immediately to avoid
- *     hammering the Drive API on rapid consecutive changes.
+ *   - If last sync ran < 30s ago, returns 200 but marks syncPending=true.
+ *   - The next notification will pick up all pending changes via the page token.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase-admin";
-import { runDriveSync, saveSyncResult } from "@/lib/drive-sync";
+import { getDriveClient } from "@/lib/google-drive";
+import { runDriveSync, saveSyncResult, syncDriveFile, SyncResult } from "@/lib/drive-sync";
 import { Timestamp, FieldValue } from "firebase-admin/firestore";
 
-export const maxDuration = 60; // Drive sync can take 30-60s with many files
+export const maxDuration = 60; // Drive sync can take up to 60s
 
 const THROTTLE_MS = 30 * 1000; // 30 seconds — deduplicate rapid bursts only
 
@@ -53,14 +61,16 @@ export async function POST(req: NextRequest) {
     return new NextResponse(null, { status: 200 });
   }
 
-  // 3. Throttle: deduplicate rapid burst notifications (e.g. bulk upload).
-  //    If within the throttle window, mark syncPending=true so the next
-  //    notification (or cron) picks up the change — never silently drop it.
+  // 3. Read settings once: throttle check + startPageToken for targeted sync.
+  let startPageToken: string | undefined;
   try {
     const settingsDoc = await db.collection("settings").doc("driveSync").get();
     if (settingsDoc.exists) {
-      const lastSyncAt = settingsDoc.data()?.lastSyncAt as Timestamp | undefined;
-      const syncPending = settingsDoc.data()?.syncPending as boolean | undefined;
+      const data = settingsDoc.data()!;
+      startPageToken = data.startPageToken as string | undefined;
+
+      const lastSyncAt = data.lastSyncAt as Timestamp | undefined;
+      const syncPending = data.syncPending as boolean | undefined;
 
       if (lastSyncAt && !syncPending) {
         const msSinceLast = Date.now() - lastSyncAt.toMillis();
@@ -68,7 +78,7 @@ export async function POST(req: NextRequest) {
           console.log(
             `drive-webhook: throttled (${Math.round(msSinceLast / 1000)}s since last sync) — marking syncPending`
           );
-          // Mark pending so the next webhook or cron will run the sync
+          // Mark pending; the next notification will process all changes via page token
           await db.collection("settings").doc("driveSync").set(
             { syncPending: true },
             { merge: true }
@@ -82,23 +92,33 @@ export async function POST(req: NextRequest) {
     // Non-fatal; proceed with sync
   }
 
-  // 4. Run full folder sync
-  console.log("drive-webhook: running sync triggered by Drive notification");
+  // 4. Sync: use drive.changes.list() for targeted sync (much faster than a full
+  //    folder scan and avoids Drive files.list() caching — the changes feed returns
+  //    authoritative, up-to-date file metadata for each changed file).
+  //    Falls back to runDriveSync() if no startPageToken stored yet.
+  console.log("drive-webhook: running targeted sync via changes.list()");
   try {
-    const result = await runDriveSync();
+    let result: SyncResult;
+
+    if (!startPageToken) {
+      // No page token stored — fall back to full folder scan
+      console.log("drive-webhook: no startPageToken, running full sync fallback");
+      result = await runDriveSync();
+    } else {
+      result = await syncChangesFromPageToken(startPageToken);
+    }
+
     await saveSyncResult(result);
-    // Clear pending flag now that sync completed
     await db.collection("settings").doc("driveSync").set(
       { syncPending: false },
       { merge: true }
     );
     console.log(
-      `drive-webhook: done — added=${result.added} updated=${result.updated} errors=${result.errors.length}`
+      `drive-webhook: done — added=${result.added} updated=${result.updated} unchanged=${result.unchanged} errors=${result.errors.length}`
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("drive-webhook: sync failed:", msg);
-    // Store the error in Firestore so it's visible in the admin UI
     try {
       await db.collection("settings").doc("driveSync").set(
         { lastWebhookError: msg, lastWebhookErrorAt: FieldValue.serverTimestamp() },
@@ -109,4 +129,98 @@ export async function POST(req: NextRequest) {
   }
 
   return new NextResponse(null, { status: 200 });
+}
+
+/**
+ * Fetches only the files that changed since `startPageToken` using Drive's
+ * changes feed. The feed includes current file metadata in each change entry,
+ * so there are no timing/caching issues with modifiedTime.
+ *
+ * Persists the new startPageToken to Firestore before syncing, so even if sync
+ * fails we don't reprocess the same changes on the next notification.
+ */
+async function syncChangesFromPageToken(startPageToken: string): Promise<SyncResult> {
+  const drive = getDriveClient();
+  const db = getAdminDb();
+  const result: SyncResult = { added: 0, updated: 0, unchanged: 0, errors: [] };
+
+  let pageToken: string = startPageToken;
+  let newPageToken: string = startPageToken;
+
+  // Collect all changed (non-removed, non-trashed, non-folder) files
+  const changedFiles: Array<{
+    id: string;
+    name: string;
+    mimeType: string;
+    modifiedTime: string;
+    size: string;
+  }> = [];
+
+  while (true) {
+    const res = await drive.changes.list({
+      pageToken,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+      fields:
+        "nextPageToken, newStartPageToken, changes(fileId, removed, file(id, name, mimeType, modifiedTime, size, trashed))",
+    });
+
+    for (const change of res.data.changes ?? []) {
+      if (
+        !change.removed &&
+        change.file &&
+        !change.file.trashed &&
+        change.fileId &&
+        change.file.id &&
+        change.file.mimeType !== "application/vnd.google-apps.folder"
+      ) {
+        changedFiles.push({
+          id: change.file.id,
+          name: change.file.name ?? change.fileId,
+          mimeType: change.file.mimeType ?? "application/octet-stream",
+          modifiedTime: change.file.modifiedTime ?? "",
+          size: change.file.size ?? "",
+        });
+      }
+    }
+
+    if (res.data.newStartPageToken) {
+      newPageToken = res.data.newStartPageToken;
+    }
+
+    if (!res.data.nextPageToken) break;
+    pageToken = res.data.nextPageToken;
+  }
+
+  // Persist the new page token immediately so we don't reprocess old changes
+  // even if the sync below fails partway through.
+  await db
+    .collection("settings")
+    .doc("driveSync")
+    .set({ startPageToken: newPageToken }, { merge: true });
+
+  if (changedFiles.length === 0) {
+    console.log("drive-webhook: changes.list() returned no file changes");
+    return result;
+  }
+
+  console.log(`drive-webhook: ${changedFiles.length} file(s) in changes feed — syncing`);
+
+  // Sync each changed file using the metadata from the changes feed.
+  // syncDriveFile() compares file.modifiedTime against the stored driveModifiedTime;
+  // since this value comes from Drive's authoritative changes feed, it's always current.
+  for (const file of changedFiles) {
+    try {
+      const status = await syncDriveFile(file);
+      if (status === "added") result.added++;
+      else if (status === "updated") result.updated++;
+      else result.unchanged++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`drive-webhook: error syncing ${file.name}:`, msg);
+      result.errors.push(`${file.name}: ${msg}`);
+    }
+  }
+
+  return result;
 }
