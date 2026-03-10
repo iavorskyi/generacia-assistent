@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase-admin";
-import { selectDocuments } from "@/lib/document-selector";
+import { selectDocuments, GEMINI_TOKEN_BUDGET } from "@/lib/document-selector";
 import { chatWithCachedContext, ChatMessage } from "@/lib/claude";
 import { chatWithContext as chatWithGemini } from "@/lib/gemini";
 import { calculateCost as calculateCostClaude } from "@/lib/claude";
@@ -213,24 +213,27 @@ async function handleMessage(message: {
   await sendTyping(chatId);
 
   try {
-    // 5. Load conversation history
-    const convDoc = await convRef.get();
+    // 5. Load conversation history + AI provider in parallel
+    const [convDoc, settingsDoc] = await Promise.all([
+      convRef.get(),
+      db.collection("settings").doc("ai").get(),
+    ]);
     const conversationHistory: ChatMessage[] = convDoc.data()?.messages ?? [];
 
-    // 6. Select documents
-    const { documents, allDocumentNames, fromCache } = await selectDocuments(
-      text,
-      String(chatId)
-    );
+    // 6. Read active AI provider (needed before selectDocuments for correct token budget)
+    const provider = (settingsDoc.data()?.provider as "claude" | "gemini") ?? "claude";
+    const tokenBudget = provider === "gemini" ? GEMINI_TOKEN_BUDGET : undefined;
+
+    // 7. Select documents with provider-aware token budget.
+    //    selectDocuments() reads cache from the `conversations` collection, but Telegram
+    //    stores history in `telegramChats` — so we pass null to skip that lookup and
+    //    always do a fresh prioritized selection with the correct budget.
+    const { documents, allDocumentNames, fromCache } = await selectDocuments(text, null, tokenBudget);
 
     if (documents.length === 0) {
       await sendMessage(chatId, "Документи компанії недоступні. Зверніться до адміністратора.");
       return;
     }
-
-    // 7. Read active AI provider
-    const settingsDoc = await db.collection("settings").doc("ai").get();
-    const provider = (settingsDoc.data()?.provider as "claude" | "gemini") ?? "claude";
 
     // 8. Call AI
     const result =
