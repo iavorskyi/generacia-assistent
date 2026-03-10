@@ -18,7 +18,7 @@ import { Timestamp, FieldValue } from "firebase-admin/firestore";
 
 export const maxDuration = 60; // Drive sync can take 30-60s with many files
 
-const THROTTLE_MS = 5 * 60 * 1000; // 5 minutes
+const THROTTLE_MS = 30 * 1000; // 30 seconds — deduplicate rapid bursts only
 
 export async function POST(req: NextRequest) {
   // 1. Verify the channel token
@@ -53,17 +53,25 @@ export async function POST(req: NextRequest) {
     return new NextResponse(null, { status: 200 });
   }
 
-  // 3. Throttle if a sync already ran recently.
+  // 3. Throttle: deduplicate rapid burst notifications (e.g. bulk upload).
+  //    If within the throttle window, mark syncPending=true so the next
+  //    notification (or cron) picks up the change — never silently drop it.
   try {
-
     const settingsDoc = await db.collection("settings").doc("driveSync").get();
     if (settingsDoc.exists) {
       const lastSyncAt = settingsDoc.data()?.lastSyncAt as Timestamp | undefined;
-      if (lastSyncAt) {
+      const syncPending = settingsDoc.data()?.syncPending as boolean | undefined;
+
+      if (lastSyncAt && !syncPending) {
         const msSinceLast = Date.now() - lastSyncAt.toMillis();
         if (msSinceLast < THROTTLE_MS) {
           console.log(
-            `drive-webhook: throttled — last sync was ${Math.round(msSinceLast / 1000)}s ago`
+            `drive-webhook: throttled (${Math.round(msSinceLast / 1000)}s since last sync) — marking syncPending`
+          );
+          // Mark pending so the next webhook or cron will run the sync
+          await db.collection("settings").doc("driveSync").set(
+            { syncPending: true },
+            { merge: true }
           );
           return new NextResponse(null, { status: 200 });
         }
@@ -79,11 +87,24 @@ export async function POST(req: NextRequest) {
   try {
     const result = await runDriveSync();
     await saveSyncResult(result);
+    // Clear pending flag now that sync completed
+    await db.collection("settings").doc("driveSync").set(
+      { syncPending: false },
+      { merge: true }
+    );
     console.log(
       `drive-webhook: done — added=${result.added} updated=${result.updated} errors=${result.errors.length}`
     );
   } catch (err) {
-    console.error("drive-webhook: sync failed:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("drive-webhook: sync failed:", msg);
+    // Store the error in Firestore so it's visible in the admin UI
+    try {
+      await db.collection("settings").doc("driveSync").set(
+        { lastWebhookError: msg, lastWebhookErrorAt: FieldValue.serverTimestamp() },
+        { merge: true }
+      );
+    } catch { /* non-fatal */ }
     // Return 200 so Google doesn't retry and flood us
   }
 

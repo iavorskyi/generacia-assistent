@@ -371,6 +371,9 @@ export default function AdminPage() {
     lastSyncAt: string | null;
     lastSyncResult: { added: number; updated: number; unchanged: number; errors: string[] } | null;
     lastWebhookAt: string | null;
+    syncPending: boolean;
+    lastWebhookError: string | null;
+    lastWebhookErrorAt: string | null;
   } | null>(null);
   const [driveRegisteringChannel, setDriveRegisteringChannel] = useState(false);
   const [driveChannelError, setDriveChannelError] = useState<string | null>(null);
@@ -740,7 +743,7 @@ export default function AdminPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Не вдалося зареєструвати канал");
       setDriveAutoSync(prev => ({
-        ...(prev ?? { lastSyncAt: null, lastSyncResult: null, lastWebhookAt: null }),
+        ...(prev ?? { lastSyncAt: null, lastSyncResult: null, lastWebhookAt: null, syncPending: false, lastWebhookError: null, lastWebhookErrorAt: null }),
         channelId: data.channelId,
         channelExpiry: data.channelExpiry,
       }));
@@ -1358,6 +1361,8 @@ export default function AdminPage() {
               const lastSync = driveAutoSync?.lastSyncAt ? new Date(driveAutoSync.lastSyncAt) : null;
               const lastWebhook = driveAutoSync?.lastWebhookAt ? new Date(driveAutoSync.lastWebhookAt) : null;
               const result = driveAutoSync?.lastSyncResult;
+              const syncPending = driveAutoSync?.syncPending ?? false;
+              const webhookError = driveAutoSync?.lastWebhookError ?? null;
               return (
                 <div className={`mb-4 flex items-start justify-between gap-4 px-4 py-3 rounded-xl border text-sm ${
                   isActive ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-200"
@@ -1370,6 +1375,7 @@ export default function AdminPage() {
                           ? `Авто-синхронізація активна до ${new Date(expiry).toLocaleDateString("uk-UA")}`
                           : "Авто-синхронізація не налаштована"}
                       </span>
+                      {syncPending && <span className="text-xs text-amber-600 font-normal">· синхронізація очікує...</span>}
                     </div>
                     {lastSync && (
                       <span className="text-gray-500 pl-4 text-xs">
@@ -1384,6 +1390,9 @@ export default function AdminPage() {
                           ? `Останній вебхук від Drive: ${lastWebhook.toLocaleString("uk-UA")}`
                           : "⚠️ Вебхук від Drive ще не отримано — перевірте налаштування DRIVE_WEBHOOK_URL"}
                       </span>
+                    )}
+                    {webhookError && (
+                      <span className="text-red-600 pl-4 text-xs">⚠️ Помилка синхронізації: {webhookError}</span>
                     )}
                     {driveChannelError && (
                       <span className="text-red-600 pl-4 text-xs">{driveChannelError}</span>
