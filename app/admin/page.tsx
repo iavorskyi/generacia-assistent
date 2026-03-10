@@ -441,6 +441,7 @@ export default function AdminPage() {
 
       if (!driveRes.ok) {
         setDriveError(driveData.error ?? "Не вдалося завантажити Drive");
+        setDriveLoaded(true);
         return;
       }
 
