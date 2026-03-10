@@ -370,6 +370,7 @@ export default function AdminPage() {
     channelExpiry: number | null;
     lastSyncAt: string | null;
     lastSyncResult: { added: number; updated: number; unchanged: number; errors: string[] } | null;
+    lastWebhookAt: string | null;
   } | null>(null);
   const [driveRegisteringChannel, setDriveRegisteringChannel] = useState(false);
   const [driveChannelError, setDriveChannelError] = useState<string | null>(null);
@@ -1355,6 +1356,7 @@ export default function AdminPage() {
               const expiry = driveAutoSync?.channelExpiry ?? 0;
               const isActive = expiry > Date.now();
               const lastSync = driveAutoSync?.lastSyncAt ? new Date(driveAutoSync.lastSyncAt) : null;
+              const lastWebhook = driveAutoSync?.lastWebhookAt ? new Date(driveAutoSync.lastWebhookAt) : null;
               const result = driveAutoSync?.lastSyncResult;
               return (
                 <div className={`mb-4 flex items-start justify-between gap-4 px-4 py-3 rounded-xl border text-sm ${
@@ -1374,6 +1376,13 @@ export default function AdminPage() {
                         Остання синхронізація: {lastSync.toLocaleString("uk-UA")}
                         {result && ` · +${result.added} додано, ${result.updated} оновлено`}
                         {result?.errors?.length ? ` · ${result.errors.length} помилок` : ""}
+                      </span>
+                    )}
+                    {isActive && (
+                      <span className={`pl-4 text-xs ${lastWebhook ? "text-gray-500" : "text-amber-600"}`}>
+                        {lastWebhook
+                          ? `Останній вебхук від Drive: ${lastWebhook.toLocaleString("uk-UA")}`
+                          : "⚠️ Вебхук від Drive ще не отримано — перевірте налаштування DRIVE_WEBHOOK_URL"}
                       </span>
                     )}
                     {driveChannelError && (

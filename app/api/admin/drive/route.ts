@@ -76,6 +76,7 @@ export async function GET() {
             channelExpiry: syncSettings.channelExpiry ?? null,
             lastSyncAt: syncSettings.lastSyncAt?.toDate?.()?.toISOString() ?? null,
             lastSyncResult: syncSettings.lastSyncResult ?? null,
+            lastWebhookAt: syncSettings.lastWebhookAt?.toDate?.()?.toISOString() ?? null,
           }
         : null,
     });

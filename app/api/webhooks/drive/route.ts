@@ -14,7 +14,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase-admin";
 import { runDriveSync, saveSyncResult } from "@/lib/drive-sync";
-import { Timestamp } from "firebase-admin/firestore";
+import { Timestamp, FieldValue } from "firebase-admin/firestore";
+
+export const maxDuration = 60; // Drive sync can take 30-60s with many files
 
 const THROTTLE_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -40,9 +42,16 @@ export async function POST(req: NextRequest) {
     return new NextResponse(null, { status: 200 });
   }
 
-  // 3. Throttle: skip if a sync ran recently
+  // 3. Record that we received a webhook (diagnostic — visible in admin UI)
+  //    and throttle if a sync already ran recently.
   const db = getAdminDb();
   try {
+    // Always stamp lastWebhookAt so we can confirm Drive is reaching this endpoint
+    await db.collection("settings").doc("driveSync").set(
+      { lastWebhookAt: FieldValue.serverTimestamp() },
+      { merge: true }
+    );
+
     const settingsDoc = await db.collection("settings").doc("driveSync").get();
     if (settingsDoc.exists) {
       const lastSyncAt = settingsDoc.data()?.lastSyncAt as Timestamp | undefined;
