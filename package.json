@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "make-admin": "npx ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/make-admin.ts"
+    "make-admin": "npx ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/make-admin.ts",
+    "deploy:preview": "DEPLOY_URL=$(vercel deploy --yes 2>&1 | grep '^Preview:' | awk '{print $2}') && vercel alias set \"$DEPLOY_URL\" generacia-dev.vercel.app"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

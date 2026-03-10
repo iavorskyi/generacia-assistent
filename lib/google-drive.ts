@@ -45,7 +45,7 @@ export interface DriveFile {
   size: string;
 }
 
-function getDriveClient() {
+export function getDriveClient() {
   const auth = new google.auth.JWT({
     email: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
     key: process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, "\n"),

@@ -2,44 +2,19 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getAdminDb } from "@/lib/firebase-admin";
-import { parseFile } from "@/lib/parsers";
-import { needsChunking, createChunks, saveChunks, deleteChunks } from "@/lib/chunker";
+import { DriveFile, getDriveClient, listFilesInFolder } from "@/lib/google-drive";
 import {
-  listFilesInFolder,
-  downloadFileAsBuffer,
-  normalizeFilename,
-  DriveFile,
-} from "@/lib/google-drive";
+  getExistingDocByDriveId,
+  syncDriveFile,
+} from "@/lib/drive-sync";
 import { FieldValue } from "firebase-admin/firestore";
+import { randomUUID } from "crypto";
 
 export const maxDuration = 120; // 120s — allows time for Gemini OCR on scanned PDFs
 
 function getFolderId(): string | null {
   const id = process.env.GOOGLE_DRIVE_FOLDER_ID?.trim();
   return id || null;
-}
-
-async function getExistingDocByDriveId(
-  driveFileId: string
-): Promise<{ id: string; driveModifiedTime?: string; chunkIds?: string[] } | null> {
-  const db = getAdminDb();
-  const snapshot = await db
-    .collection("documents")
-    .where("driveFileId", "==", driveFileId)
-    .get();
-
-  if (snapshot.empty) return null;
-
-  // Skip chunk docs — older syncs may have written driveFileId onto chunks too.
-  // The parent is the doc without isChunk: true.
-  const parent = snapshot.docs.find((d) => !d.data().isChunk);
-  if (!parent) return null;
-
-  return {
-    id:                parent.id,
-    driveModifiedTime: parent.data().driveModifiedTime,
-    chunkIds:          parent.data().chunkIds ?? [],
-  };
 }
 
 // GET /api/admin/drive — list files with sync status
@@ -58,7 +33,14 @@ export async function GET() {
   }
 
   try {
-    const files = await listFilesInFolder(folderId);
+    const db = getAdminDb();
+
+    const [files, syncSettingsDoc] = await Promise.all([
+      listFilesInFolder(folderId),
+      db.collection("settings").doc("driveSync").get(),
+    ]);
+
+    const syncSettings = syncSettingsDoc.exists ? syncSettingsDoc.data()! : null;
 
     const preview = await Promise.all(
       files.map(async (file: DriveFile) => {
@@ -88,6 +70,15 @@ export async function GET() {
       folderId,
       fileCount: files.length,
       files: preview,
+      autoSync: syncSettings
+        ? {
+            channelId: syncSettings.channelId ?? null,
+            channelExpiry: syncSettings.channelExpiry ?? null,
+            lastSyncAt: syncSettings.lastSyncAt?.toDate?.()?.toISOString() ?? null,
+            lastSyncResult: syncSettings.lastSyncResult ?? null,
+            lastWebhookAt: syncSettings.lastWebhookAt?.toDate?.()?.toISOString() ?? null,
+          }
+        : null,
     });
   } catch (error) {
     console.error("Drive preview error:", error);
@@ -125,122 +116,117 @@ export async function POST(req: Request) {
   }
 
   try {
-    const db = getAdminDb();
     const existing = await getExistingDocByDriveId(fileId);
-
     if (existing && existing.driveModifiedTime === modifiedTime) {
       return NextResponse.json({ status: "unchanged" });
     }
 
     const file: DriveFile = { id: fileId, name, mimeType, modifiedTime, size: "" };
-    const buffer = await downloadFileAsBuffer(fileId, mimeType);
-    const filename = normalizeFilename(file);
-    const parsed = await parseFile(buffer, filename);
-
-    const rawContent = parsed.content;
-    const driveSourceUrl = `https://drive.google.com/file/d/${fileId}/view`;
-    const shouldChunk = needsChunking(rawContent);
-
-    // Prepare parent document content.
-    // For chunked docs: store a short excerpt so admin UI can show a preview.
-    // Chunks hold the full content — no truncation needed there.
-    // For non-chunked docs: apply the legacy 900KB Firestore limit.
-    const MAX_CONTENT_BYTES = 900_000;
-    let content = rawContent;
-    let truncated = false;
-
-    if (shouldChunk) {
-      // Keep first 1 000 chars as preview; full content lives in chunks
-      content = rawContent.slice(0, 1_000) +
-        `\n\n[Документ розбито на частини для ефективного пошуку]`;
-    } else if (Buffer.byteLength(rawContent, "utf8") > MAX_CONTENT_BYTES) {
-      content = Buffer.from(rawContent, "utf8").slice(0, MAX_CONTENT_BYTES).toString("utf8");
-      content += "\n\n[Вміст обрізано через обмеження розміру]";
-      truncated = true;
-    }
-
-    const tokenCount = truncated
-      ? Math.round(MAX_CONTENT_BYTES / 4)
-      : parsed.tokenCount;  // full count even for chunked (metadata only)
-
-    const chunkMeta = {
-      filename,
-      category:    parsed.category,
-      priority:    parsed.priority,
-      sourceType:  "drive",
-      // Note: driveFileId is intentionally NOT stored on chunk docs.
-      // Only the parent document carries driveFileId, which keeps
-      // getExistingDocByDriveId from accidentally matching a chunk.
-      sourceUrl:   driveSourceUrl,
-    };
-
-    if (existing) {
-      // Delete old chunks before writing new ones
-      if (existing.chunkIds?.length) {
-        await deleteChunks(existing.chunkIds);
-      }
-
-      await db.collection("documents").doc(existing.id).update({
-        filename,
-        content,
-        category:          parsed.category,
-        priority:          parsed.priority,
-        tokenCount,
-        truncated,
-        isChunked:         shouldChunk || null,
-        chunkIds:          [],          // will be updated below if chunked
-        chunkCount:        0,
-        driveFileId:       fileId,
-        sourceUrl:         driveSourceUrl,
-        driveModifiedTime: modifiedTime,
-        lastFetched:       FieldValue.serverTimestamp(),
-      });
-
-      if (shouldChunk) {
-        const chunks   = createChunks(rawContent);
-        const chunkIds = await saveChunks(existing.id, chunks, chunkMeta);
-        await db.collection("documents").doc(existing.id).update({
-          chunkIds,
-          chunkCount: chunkIds.length,
-        });
-        return NextResponse.json({ status: "updated", chunked: true, chunkCount: chunkIds.length });
-      }
-
-      return NextResponse.json({ status: "updated", truncated });
-    } else {
-      const docRef = await db.collection("documents").add({
-        filename,
-        content,
-        category:          parsed.category,
-        priority:          parsed.priority,
-        tokenCount,
-        truncated,
-        isChunked:         shouldChunk || null,
-        chunkIds:          [],
-        chunkCount:        0,
-        uploadedBy:        "drive-sync",
-        uploadedAt:        FieldValue.serverTimestamp(),
-        usageCount:        0,
-        lastUsed:          null,
-        sourceType:        "drive",
-        driveFileId:       fileId,
-        sourceUrl:         driveSourceUrl,
-        driveModifiedTime: modifiedTime,
-        lastFetched:       FieldValue.serverTimestamp(),
-      });
-
-      if (shouldChunk) {
-        const chunks   = createChunks(rawContent);
-        const chunkIds = await saveChunks(docRef.id, chunks, chunkMeta);
-        await docRef.update({ chunkIds, chunkCount: chunkIds.length });
-        return NextResponse.json({ status: "added", chunked: true, chunkCount: chunkIds.length });
-      }
-
-      return NextResponse.json({ status: "added", truncated });
-    }
+    const result = await syncDriveFile(file);
+    return NextResponse.json({ status: result });
   } catch (error) {
     console.error("Drive sync error:", error);
     const message = error instanceof Error ? error.message : "Sync failed";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+// PUT /api/admin/drive — register (or renew) the Drive push-notification channel
+export async function PUT() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.isAdmin) {
+    return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+  }
+
+  const webhookSecret = process.env.DRIVE_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    return NextResponse.json(
+      { error: "DRIVE_WEBHOOK_SECRET is not configured" },
+      { status: 500 }
+    );
+  }
+
+  // DRIVE_WEBHOOK_URL lets you pin the webhook to a verified domain (e.g. the
+  // production URL) even when deploying to a preview/dev environment whose
+  // alias is not registered in Google Cloud's domain verification list.
+  // Falls back to NEXTAUTH_URL if not set.
+  const appUrl = (
+    process.env.DRIVE_WEBHOOK_URL ?? process.env.NEXTAUTH_URL ?? ""
+  ).replace(/\/$/, "");
+  if (!appUrl) {
+    return NextResponse.json(
+      { error: "DRIVE_WEBHOOK_URL (or NEXTAUTH_URL) is not configured" },
+      { status: 500 }
+    );
+  }
+
+  try {
+    const db = getAdminDb();
+    const drive = getDriveClient();
+
+    // Stop existing channel if present
+    const existing = await db.collection("settings").doc("driveSync").get();
+    if (existing.exists) {
+      const data = existing.data()!;
+      if (data.channelId && data.resourceId) {
+        try {
+          await drive.channels.stop({
+            requestBody: { id: data.channelId, resourceId: data.resourceId },
+          });
+        } catch {
+          // Non-fatal — channel may have already expired
+        }
+      }
+    }
+
+    // Get current change page token
+    const tokenRes = await drive.changes.getStartPageToken({
+      supportsAllDrives: true,
+    });
+    const startPageToken = tokenRes.data.startPageToken!;
+
+    // Register new watch channel (max 7 days; Drive caps the expiration)
+    const channelId = randomUUID();
+    const expirationMs = Date.now() + 6 * 24 * 60 * 60 * 1000; // 6 days
+    const watchRes = await drive.changes.watch({
+      pageToken: startPageToken,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+      requestBody: {
+        id: channelId,
+        type: "web_hook",
+        address: `${appUrl}/api/webhooks/drive`,
+        token: webhookSecret,
+        expiration: String(expirationMs),
+      },
+    });
+
+    const resourceId = watchRes.data.resourceId!;
+    const actualExpiry = Number(watchRes.data.expiration ?? expirationMs);
+
+    await db
+      .collection("settings")
+      .doc("driveSync")
+      .set(
+        {
+          channelId,
+          resourceId,
+          channelExpiry: actualExpiry,
+          startPageToken,
+          channelRegisteredAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+    return NextResponse.json({
+      channelId,
+      resourceId,
+      channelExpiry: actualExpiry,
+      expiresAt: new Date(actualExpiry).toISOString(),
+    });
+  } catch (error) {
+    console.error("Drive channel registration error:", error);
+    const message = error instanceof Error ? error.message : "Registration failed";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
