@@ -740,7 +740,7 @@ export default function AdminPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Не вдалося зареєструвати канал");
       setDriveAutoSync(prev => ({
-        ...(prev ?? { lastSyncAt: null, lastSyncResult: null }),
+        ...(prev ?? { lastSyncAt: null, lastSyncResult: null, lastWebhookAt: null }),
         channelId: data.channelId,
         channelExpiry: data.channelExpiry,
       }));
