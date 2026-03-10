@@ -145,10 +145,16 @@ export async function PUT() {
     );
   }
 
-  const appUrl = (process.env.NEXTAUTH_URL ?? "").replace(/\/$/, "");
+  // DRIVE_WEBHOOK_URL lets you pin the webhook to a verified domain (e.g. the
+  // production URL) even when deploying to a preview/dev environment whose
+  // alias is not registered in Google Cloud's domain verification list.
+  // Falls back to NEXTAUTH_URL if not set.
+  const appUrl = (
+    process.env.DRIVE_WEBHOOK_URL ?? process.env.NEXTAUTH_URL ?? ""
+  ).replace(/\/$/, "");
   if (!appUrl) {
     return NextResponse.json(
-      { error: "NEXTAUTH_URL is not configured" },
+      { error: "DRIVE_WEBHOOK_URL (or NEXTAUTH_URL) is not configured" },
       { status: 500 }
     );
   }

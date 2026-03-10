@@ -39,10 +39,12 @@ export async function GET(request: NextRequest) {
 
   // ── 1. Channel renewal ────────────────────────────────────────────────────
   const webhookSecret = process.env.DRIVE_WEBHOOK_SECRET;
-  const appUrl = (process.env.NEXTAUTH_URL ?? "").replace(/\/$/, "");
+  const appUrl = (
+    process.env.DRIVE_WEBHOOK_URL ?? process.env.NEXTAUTH_URL ?? ""
+  ).replace(/\/$/, "");
 
   if (!webhookSecret || !appUrl) {
-    report.channelRenewal = "skipped — DRIVE_WEBHOOK_SECRET or NEXTAUTH_URL not set";
+    report.channelRenewal = "skipped — DRIVE_WEBHOOK_SECRET or DRIVE_WEBHOOK_URL/NEXTAUTH_URL not set";
   } else {
     try {
       const settingsDoc = await db.collection("settings").doc("driveSync").get();
