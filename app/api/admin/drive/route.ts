@@ -79,6 +79,9 @@ export async function GET() {
             lastSyncAt: syncSettings.lastSyncAt?.toDate?.()?.toISOString() ?? null,
             lastSyncResult: syncSettings.lastSyncResult ?? null,
             lastWebhookAt: syncSettings.lastWebhookAt?.toDate?.()?.toISOString() ?? null,
+            syncPending: syncSettings.syncPending ?? false,
+            lastWebhookError: syncSettings.lastWebhookError ?? null,
+            lastWebhookErrorAt: syncSettings.lastWebhookErrorAt?.toDate?.()?.toISOString() ?? null,
           }
         : null,
     });
