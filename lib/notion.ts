@@ -31,17 +31,41 @@ function extractRichText(richText: RichTextItem[] | undefined): string {
 
 function extractPageTitle(page: Block): string {
   const props = page.properties as Record<string, Block> | undefined;
-  if (!props) return "Untitled";
+  if (!props) return "(Без назви)";
 
+  // First pass: find the title-type property
   for (const prop of Object.values(props)) {
     if (prop.type === "title") {
       const titleArr = prop.title as RichTextItem[] | undefined;
       if (titleArr && titleArr.length > 0) {
-        return titleArr.map((t) => t.plain_text).join("");
+        const text = titleArr.map((t) => t.plain_text).join("").trim();
+        if (text) return text;
       }
     }
   }
-  return "Untitled";
+
+  // Fallback: use the first non-empty readable property (for empty DB rows)
+  for (const prop of Object.values(props)) {
+    const type = prop.type as string;
+    let fallback = "";
+    if (type === "rich_text") {
+      fallback = extractRichText(prop.rich_text as RichTextItem[] | undefined).trim();
+    } else if (type === "select") {
+      fallback = ((prop.select as Block | null)?.name as string | undefined) ?? "";
+    } else if (type === "status") {
+      fallback = ((prop.status as Block | null)?.name as string | undefined) ?? "";
+    } else if (type === "date") {
+      fallback = ((prop.date as Block | null)?.start as string | undefined) ?? "";
+    } else if (type === "people") {
+      const people = prop.people as Block[] | undefined;
+      fallback = (people ?? []).map((u) => u.name as string).filter(Boolean).join(", ");
+    }
+    if (fallback.trim()) return fallback.trim();
+  }
+
+  // Last resort: show short ID so the row is at least identifiable
+  const id = (page.id as string | undefined) ?? "";
+  return `(Без назви ${id.slice(0, 8)})`;
 }
 
 export async function listNotionPages(): Promise<NotionPage[]> {
