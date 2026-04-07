@@ -1,5 +1,38 @@
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
 const NOTION_API_BASE = "https://api.notion.com/v1";
 const NOTION_VERSION = "2022-06-28";
+
+async function describeImageWithGemini(
+  imageUrl: string,
+  caption: string
+): Promise<string> {
+  try {
+    const res = await fetch(imageUrl);
+    if (!res.ok) throw new Error(`Failed to fetch image: ${res.status}`);
+
+    const arrayBuffer = await res.arrayBuffer();
+    const base64 = Buffer.from(arrayBuffer).toString("base64");
+    const mimeType = (res.headers.get("content-type") ?? "image/jpeg").split(";")[0];
+
+    const client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
+    const model = client.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+    const prompt = caption
+      ? `Опиши детально, що зображено на цьому зображенні. Підпис до зображення: "${caption}". Відповідай українською мовою.`
+      : "Опиши детально, що зображено на цьому зображенні. Відповідай українською мовою.";
+
+    const result = await model.generateContent([
+      { inlineData: { mimeType, data: base64 } },
+      prompt,
+    ]);
+
+    return result.response.text().trim();
+  } catch (err) {
+    console.error("Notion image description failed:", err);
+    return "";
+  }
+}
 
 function getNotionToken(): string {
   const token = process.env.NOTION_TOKEN;
@@ -208,6 +241,20 @@ async function renderBlock(block: Block): Promise<string | null> {
       break;
     case "image": {
       const caption = extractRichText(content.caption as RichTextItem[] | undefined);
+      const fileObj = content.file as { url?: string } | undefined;
+      const externalObj = content.external as { url?: string } | undefined;
+      const imageUrl = fileObj?.url ?? externalObj?.url ?? "";
+
+      if (imageUrl && process.env.GEMINI_API_KEY) {
+        const description = await describeImageWithGemini(imageUrl, caption);
+        if (description) {
+          result = caption
+            ? `[Зображення: ${caption}\nОпис: ${description}]`
+            : `[Зображення\nОпис: ${description}]`;
+          break;
+        }
+      }
+      // Fallback if no API key or description failed
       result = caption ? `[Зображення: ${caption}]` : "[Зображення]";
       break;
     }
