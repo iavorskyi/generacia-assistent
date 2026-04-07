@@ -65,3 +65,29 @@ export function invalidateSystemPromptCache() {
   cachedPrompt = null;
   cacheExpiry = 0;
 }
+
+export const DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-6";
+
+let cachedModel: string | null = null;
+let modelCacheExpiry = 0;
+
+export async function getClaudeModel(): Promise<string> {
+  if (cachedModel && Date.now() < modelCacheExpiry) {
+    return cachedModel;
+  }
+  try {
+    const db = getAdminDb();
+    const doc = await db.collection("settings").doc("ai").get();
+    const stored = doc.data()?.claudeModel as string | undefined;
+    cachedModel = stored?.trim() || DEFAULT_CLAUDE_MODEL;
+    modelCacheExpiry = Date.now() + CACHE_TTL;
+    return cachedModel;
+  } catch {
+    return DEFAULT_CLAUDE_MODEL;
+  }
+}
+
+export function invalidateClaudeModelCache() {
+  cachedModel = null;
+  modelCacheExpiry = 0;
+}

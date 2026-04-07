@@ -409,6 +409,7 @@ export default function AdminPage() {
 
   // ── Settings ──
   const [aiProvider, setAiProvider] = useState<"claude" | "gemini" | null>(null);
+  const [claudeModel, setClaudeModel] = useState<string>("claude-sonnet-4-6");
   const [systemPrompt, setSystemPrompt] = useState<string>("");
   const [promptSaving, setPromptSaving] = useState(false);
   const [promptSuccess, setPromptSuccess] = useState(false);
@@ -936,6 +937,7 @@ export default function AdminPage() {
       const data = await res.json();
       if (res.ok) {
         setAiProvider(data.provider);
+        setClaudeModel(data.claudeModel ?? "claude-sonnet-4-6");
         setSystemPrompt(data.systemPrompt ?? "");
       } else {
         setSettingsError(data.error ?? "Не вдалося завантажити налаштування");
@@ -962,6 +964,23 @@ export default function AdminPage() {
       }
     } catch { setSettingsError("Помилка мережі"); }
     finally { setPromptSaving(false); }
+  };
+
+  const switchClaudeModel = async (model: string) => {
+    if (model === claudeModel) return;
+    setSettingsSaving(true);
+    setSettingsError(null);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ claudeModel: model }),
+      });
+      const data = await res.json();
+      if (res.ok) { setClaudeModel(data.claudeModel); setSettingsSuccess(true); setTimeout(() => setSettingsSuccess(false), 3000); }
+      else setSettingsError(data.error ?? "Не вдалося зберегти модель");
+    } catch { setSettingsError("Помилка мережі"); }
+    finally { setSettingsSaving(false); }
   };
 
   const switchProvider = async (provider: "claude" | "gemini") => {
@@ -1855,13 +1874,11 @@ export default function AdminPage() {
                 <button onClick={() => switchProvider("claude")} disabled={settingsSaving}
                   className={`text-left p-5 rounded-xl border-2 transition-all disabled:opacity-50 ${aiProvider === "claude" ? "border-[#ff8319] bg-orange-50" : "border-gray-200 hover:border-gray-300 bg-white"}`}>
                   <div className="flex items-center justify-between mb-3">
-                    <span className="font-semibold text-gray-900">Claude Haiku</span>
+                    <span className="font-semibold text-gray-900">Claude</span>
                     {aiProvider === "claude" && <span className="text-xs font-medium bg-[#ff8319] text-white px-2 py-0.5 rounded-full">Активний</span>}
                   </div>
                   <p className="text-xs text-gray-500 mb-1">Anthropic</p>
                   <div className="space-y-0.5 text-xs text-gray-400">
-                    <p>Вхідні: $0.25 / 1M токенів</p>
-                    <p>Вихідні: $1.25 / 1M токенів</p>
                     <p className="text-green-600">+ Промпт-кешування</p>
                   </div>
                 </button>
@@ -1878,6 +1895,32 @@ export default function AdminPage() {
                     <p className="text-blue-500">~2× дешевше на виході</p>
                   </div>
                 </button>
+              </div>
+            )}
+
+            {/* Claude model selector */}
+            {aiProvider === "claude" && (
+              <div className="mt-4 p-4 rounded-xl border border-gray-200 bg-gray-50">
+                <p className="text-sm font-medium text-gray-700 mb-3">Модель Claude</p>
+                <div className="space-y-2">
+                  {[
+                    { id: "claude-haiku-4-5-20251001",  label: "Claude Haiku 4.5",   price: "$0.80 / $4.00",  note: "Найшвидший, найдешевший" },
+                    { id: "claude-sonnet-4-6",           label: "Claude Sonnet 4.6",  price: "$3.00 / $15.00", note: "Найкращий баланс" },
+                    { id: "claude-opus-4-6",             label: "Claude Opus 4.6",    price: "$15.00 / $75.00", note: "Найпотужніший" },
+                  ].map(m => (
+                    <button key={m.id} onClick={() => switchClaudeModel(m.id)} disabled={settingsSaving}
+                      className={`w-full text-left px-4 py-3 rounded-lg border transition-all disabled:opacity-50 flex items-center justify-between ${claudeModel === m.id ? "border-[#ff8319] bg-white" : "border-gray-200 bg-white hover:border-gray-300"}`}>
+                      <div>
+                        <span className="text-sm font-medium text-gray-900">{m.label}</span>
+                        <span className="text-xs text-gray-400 ml-2">{m.note}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-400">{m.price} / 1M</span>
+                        {claudeModel === m.id && <span className="text-xs font-medium bg-[#ff8319] text-white px-2 py-0.5 rounded-full">Активна</span>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 

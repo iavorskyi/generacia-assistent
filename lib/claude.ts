@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { SelectedDocument, DocMeta } from "@/lib/document-selector";
 import { TokenUsage } from "@/types";
-import { getSystemPrompt } from "@/lib/system-prompt";
+import { getSystemPrompt, getClaudeModel } from "@/lib/system-prompt";
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -112,9 +112,9 @@ export async function chatWithCachedContext(
     },
   ];
 
-  const systemPrompt = await getSystemPrompt();
+  const [systemPrompt, claudeModel] = await Promise.all([getSystemPrompt(), getClaudeModel()]);
   const response = await client.messages.create({
-    model: "claude-sonnet-4-6",
+    model: claudeModel,
     max_tokens: 4096,
     system: systemPrompt,
     messages,
@@ -147,18 +147,24 @@ export async function chatWithCachedContext(
   };
 }
 
-// Calculate cost in USD based on token usage
-export function calculateCost(usage: TokenUsage): number {
-  // Claude Sonnet 4.6 pricing (per 1M tokens)
-  const INPUT_COST = 3.0 / 1_000_000;
-  const CACHE_WRITE_COST = 3.75 / 1_000_000;
-  const CACHE_READ_COST = 0.3 / 1_000_000;
-  const OUTPUT_COST = 15.0 / 1_000_000;
+// Pricing per 1M tokens for each Claude model
+const MODEL_PRICING: Record<string, { input: number; cacheWrite: number; cacheRead: number; output: number }> = {
+  "claude-haiku-4-5-20251001": { input: 0.80,  cacheWrite: 1.00,  cacheRead: 0.08, output: 4.00  },
+  "claude-sonnet-4-5-20250929": { input: 3.00, cacheWrite: 3.75,  cacheRead: 0.30, output: 15.00 },
+  "claude-sonnet-4-6":          { input: 3.00, cacheWrite: 3.75,  cacheRead: 0.30, output: 15.00 },
+  "claude-opus-4-6":            { input: 15.00, cacheWrite: 18.75, cacheRead: 1.50, output: 75.00 },
+  "claude-opus-4-5-20251101":   { input: 15.00, cacheWrite: 18.75, cacheRead: 1.50, output: 75.00 },
+};
+const DEFAULT_PRICING = MODEL_PRICING["claude-sonnet-4-6"];
+
+// Calculate cost in USD based on token usage and model
+export function calculateCost(usage: TokenUsage, model?: string): number {
+  const p = (model && MODEL_PRICING[model]) ? MODEL_PRICING[model] : DEFAULT_PRICING;
 
   return (
-    usage.input_tokens * INPUT_COST +
-    (usage.cache_creation_input_tokens ?? 0) * CACHE_WRITE_COST +
-    (usage.cache_read_input_tokens ?? 0) * CACHE_READ_COST +
-    usage.output_tokens * OUTPUT_COST
+    usage.input_tokens                          * (p.input      / 1_000_000) +
+    (usage.cache_creation_input_tokens ?? 0)    * (p.cacheWrite / 1_000_000) +
+    (usage.cache_read_input_tokens ?? 0)        * (p.cacheRead  / 1_000_000) +
+    usage.output_tokens                         * (p.output     / 1_000_000)
   );
 }
