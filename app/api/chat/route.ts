@@ -6,8 +6,9 @@ import { selectDocuments, GEMINI_TOKEN_BUDGET } from "@/lib/document-selector";
 import { chatWithCachedContext, calculateCost as calculateCostClaude, ChatMessage } from "@/lib/claude";
 import { chatWithContext as chatWithGemini, calculateCost as calculateCostGemini } from "@/lib/gemini";
 import { FieldValue } from "firebase-admin/firestore";
+import Anthropic from "@anthropic-ai/sdk";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 export async function POST(request: NextRequest) {
   try {
@@ -182,6 +183,39 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           { error: "Gemini API: невірний або відсутній API-ключ. Перевірте GEMINI_API_KEY." },
           { status: 403 }
+        );
+      }
+
+      // Anthropic billing / credit errors
+      if (msgL.includes("credit balance") || msgL.includes("billing") || msgL.includes("payment")) {
+        return NextResponse.json(
+          { error: "Claude API: недостатньо кредитів. Поповніть баланс на console.anthropic.com або переключіться на Gemini." },
+          { status: 402 }
+        );
+      }
+
+      // Anthropic auth errors
+      if (error instanceof Anthropic.AuthenticationError) {
+        return NextResponse.json(
+          { error: "Claude API: невірний API-ключ. Перевірте ANTHROPIC_API_KEY." },
+          { status: 401 }
+        );
+      }
+
+      // Anthropic rate limit
+      if (error instanceof Anthropic.RateLimitError) {
+        return NextResponse.json(
+          { error: "Claude API: перевищено ліміт запитів. Спробуйте за кілька секунд." },
+          { status: 429 }
+        );
+      }
+
+      // Anthropic connection / timeout — log full error for debugging
+      if (error instanceof Anthropic.APIConnectionError) {
+        console.error("Anthropic connection error details:", error.cause ?? error);
+        return NextResponse.json(
+          { error: `Claude API: помилка з'єднання (${error.message}). Перевірте ANTHROPIC_API_KEY або спробуйте ще раз.` },
+          { status: 503 }
         );
       }
     }
