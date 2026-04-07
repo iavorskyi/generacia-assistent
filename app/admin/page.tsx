@@ -820,6 +820,7 @@ export default function AdminPage() {
           title: row.title,
           lastEdited: row.lastEdited,
           url: row.url,
+          force: true,
         }),
       });
     } finally {

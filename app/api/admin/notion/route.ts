@@ -94,13 +94,14 @@ export async function POST(req: Request) {
     );
   }
 
-  let pageId: string, title: string, lastEdited: string, url: string;
+  let pageId: string, title: string, lastEdited: string, url: string, force: boolean;
   try {
     const body = await req.json();
     pageId = body.pageId;
     title = body.title;
     lastEdited = body.lastEdited;
     url = body.url ?? "";
+    force = body.force === true;
     if (!pageId || !title || !lastEdited) {
       return NextResponse.json({ error: "pageId, title and lastEdited are required" }, { status: 400 });
     }
@@ -112,7 +113,7 @@ export async function POST(req: Request) {
     const db = getAdminDb();
     const existing = await getExistingDocByNotionId(pageId);
 
-    if (existing && existing.notionLastEdited === lastEdited) {
+    if (!force && existing && existing.notionLastEdited === lastEdited) {
       return NextResponse.json({ status: "unchanged" });
     }
 
