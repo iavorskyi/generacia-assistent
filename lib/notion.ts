@@ -33,9 +33,7 @@ function extractPageTitle(page: Block): string {
   const props = page.properties as Record<string, Block> | undefined;
   if (!props) return "Untitled";
 
-  for (const key of ["title", "Title", "Name", "name"]) {
-    const prop = props[key];
-    if (!prop) continue;
+  for (const prop of Object.values(props)) {
     if (prop.type === "title") {
       const titleArr = prop.title as RichTextItem[] | undefined;
       if (titleArr && titleArr.length > 0) {
