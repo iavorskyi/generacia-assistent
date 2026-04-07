@@ -114,7 +114,7 @@ export async function chatWithCachedContext(
 
   const systemPrompt = await getSystemPrompt();
   const response = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
+    model: "claude-sonnet-4-6",
     max_tokens: 4096,
     system: systemPrompt,
     messages,
@@ -149,11 +149,11 @@ export async function chatWithCachedContext(
 
 // Calculate cost in USD based on token usage
 export function calculateCost(usage: TokenUsage): number {
-  // Claude Haiku pricing (per 1M tokens)
-  const INPUT_COST = 0.25 / 1_000_000;
-  const CACHE_WRITE_COST = 0.3 / 1_000_000;
-  const CACHE_READ_COST = 0.03 / 1_000_000;
-  const OUTPUT_COST = 1.25 / 1_000_000;
+  // Claude Sonnet 4.6 pricing (per 1M tokens)
+  const INPUT_COST = 3.0 / 1_000_000;
+  const CACHE_WRITE_COST = 3.75 / 1_000_000;
+  const CACHE_READ_COST = 0.3 / 1_000_000;
+  const OUTPUT_COST = 15.0 / 1_000_000;
 
   return (
     usage.input_tokens * INPUT_COST +
