@@ -91,3 +91,29 @@ export function invalidateClaudeModelCache() {
   cachedModel = null;
   modelCacheExpiry = 0;
 }
+
+export const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+
+let cachedGeminiModel: string | null = null;
+let geminiModelCacheExpiry = 0;
+
+export async function getGeminiModel(): Promise<string> {
+  if (cachedGeminiModel && Date.now() < geminiModelCacheExpiry) {
+    return cachedGeminiModel;
+  }
+  try {
+    const db = getAdminDb();
+    const doc = await db.collection("settings").doc("ai").get();
+    const stored = doc.data()?.geminiModel as string | undefined;
+    cachedGeminiModel = stored?.trim() || DEFAULT_GEMINI_MODEL;
+    geminiModelCacheExpiry = Date.now() + CACHE_TTL;
+    return cachedGeminiModel;
+  } catch {
+    return DEFAULT_GEMINI_MODEL;
+  }
+}
+
+export function invalidateGeminiModelCache() {
+  cachedGeminiModel = null;
+  geminiModelCacheExpiry = 0;
+}

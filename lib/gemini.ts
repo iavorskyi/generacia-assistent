@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { SelectedDocument, DocMeta } from "@/lib/document-selector";
 import { TokenUsage } from "@/types";
-import { getSystemPrompt } from "@/lib/system-prompt";
+import { getSystemPrompt, getGeminiModel } from "@/lib/system-prompt";
 
 const client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
 
@@ -101,9 +101,9 @@ export async function chatWithContext(
     `Будь ласка, використовуй лише ці документи для відповіді на мої питання. ` +
     `Якщо питання стосується переліку всіх джерел — використовуй <document_catalog>.`;
 
-  const systemPrompt = await getSystemPrompt();
+  const [systemPrompt, geminiModel] = await Promise.all([getSystemPrompt(), getGeminiModel()]);
   const model = client.getGenerativeModel({
-    model: "gemini-2.5-flash",
+    model: geminiModel,
     systemInstruction: systemPrompt,
   });
 
@@ -146,13 +146,23 @@ export async function chatWithContext(
   };
 }
 
-export function calculateCost(usage: TokenUsage): number {
-  // Gemini 2.5 Flash pricing (per 1M tokens, non-thinking mode)
-  const INPUT_COST = 0.15 / 1_000_000;
-  const OUTPUT_COST = 0.60 / 1_000_000;
+const GEMINI_PRICING: Record<string, { input: number; output: number }> = {
+  "gemini-2.0-flash":           { input: 0.10,  output: 0.40  },
+  "gemini-2.0-flash-lite":      { input: 0.075, output: 0.30  },
+  "gemini-2.5-flash-lite":      { input: 0.10,  output: 0.40  },
+  "gemini-2.5-flash":           { input: 0.15,  output: 0.60  },
+  "gemini-2.5-pro":             { input: 1.25,  output: 10.00 },
+  "gemini-3-flash-preview":     { input: 0.15,  output: 0.60  },
+  "gemini-3-pro-preview":       { input: 1.25,  output: 10.00 },
+  "gemini-3.1-flash-lite-preview": { input: 0.10, output: 0.40 },
+  "gemini-3.1-pro-preview":     { input: 1.25,  output: 10.00 },
+};
+const DEFAULT_GEMINI_PRICING = GEMINI_PRICING["gemini-2.5-flash"];
 
+export function calculateCost(usage: TokenUsage, model?: string): number {
+  const p = (model && GEMINI_PRICING[model]) ? GEMINI_PRICING[model] : DEFAULT_GEMINI_PRICING;
   return (
-    usage.input_tokens * INPUT_COST +
-    usage.output_tokens * OUTPUT_COST
+    usage.input_tokens  * (p.input  / 1_000_000) +
+    usage.output_tokens * (p.output / 1_000_000)
   );
 }

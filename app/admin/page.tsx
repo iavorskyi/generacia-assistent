@@ -410,6 +410,7 @@ export default function AdminPage() {
   // ── Settings ──
   const [aiProvider, setAiProvider] = useState<"claude" | "gemini" | null>(null);
   const [claudeModel, setClaudeModel] = useState<string>("claude-sonnet-4-6");
+  const [geminiModel, setGeminiModel] = useState<string>("gemini-2.5-flash");
   const [systemPrompt, setSystemPrompt] = useState<string>("");
   const [promptSaving, setPromptSaving] = useState(false);
   const [promptSuccess, setPromptSuccess] = useState(false);
@@ -938,6 +939,7 @@ export default function AdminPage() {
       if (res.ok) {
         setAiProvider(data.provider);
         setClaudeModel(data.claudeModel ?? "claude-sonnet-4-6");
+        setGeminiModel(data.geminiModel ?? "gemini-2.5-flash");
         setSystemPrompt(data.systemPrompt ?? "");
       } else {
         setSettingsError(data.error ?? "Не вдалося завантажити налаштування");
@@ -964,6 +966,23 @@ export default function AdminPage() {
       }
     } catch { setSettingsError("Помилка мережі"); }
     finally { setPromptSaving(false); }
+  };
+
+  const switchGeminiModel = async (model: string) => {
+    if (model === geminiModel) return;
+    setSettingsSaving(true);
+    setSettingsError(null);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ geminiModel: model }),
+      });
+      const data = await res.json();
+      if (res.ok) { setGeminiModel(data.geminiModel); setSettingsSuccess(true); setTimeout(() => setSettingsSuccess(false), 3000); }
+      else setSettingsError(data.error ?? "Не вдалося зберегти модель");
+    } catch { setSettingsError("Помилка мережі"); }
+    finally { setSettingsSaving(false); }
   };
 
   const switchClaudeModel = async (model: string) => {
@@ -1895,6 +1914,36 @@ export default function AdminPage() {
                     <p className="text-blue-500">~2× дешевше на виході</p>
                   </div>
                 </button>
+              </div>
+            )}
+
+            {/* Gemini model selector */}
+            {aiProvider === "gemini" && (
+              <div className="mt-4 p-4 rounded-xl border border-gray-200 bg-gray-50">
+                <p className="text-sm font-medium text-gray-700 mb-3">Модель Gemini</p>
+                <div className="space-y-2">
+                  {[
+                    { id: "gemini-2.0-flash-lite",       label: "Gemini 2.0 Flash Lite",       price: "$0.075 / $0.30",  note: "Найдешевший" },
+                    { id: "gemini-2.5-flash-lite",        label: "Gemini 2.5 Flash Lite",       price: "$0.10 / $0.40",   note: "Швидкий, дешевий" },
+                    { id: "gemini-2.5-flash",             label: "Gemini 2.5 Flash",            price: "$0.15 / $0.60",   note: "Поточний за замовчуванням" },
+                    { id: "gemini-2.5-pro",               label: "Gemini 2.5 Pro",              price: "$1.25 / $10.00",  note: "Найкращий стабільний" },
+                    { id: "gemini-3-flash-preview",       label: "Gemini 3 Flash Preview",      price: "$0.15 / $0.60",   note: "Новий швидкий" },
+                    { id: "gemini-3-pro-preview",         label: "Gemini 3 Pro Preview",        price: "$1.25 / $10.00",  note: "Новий потужний" },
+                    { id: "gemini-3.1-pro-preview",       label: "Gemini 3.1 Pro Preview",      price: "$1.25 / $10.00",  note: "Найновіший, найрозумніший" },
+                  ].map(m => (
+                    <button key={m.id} onClick={() => switchGeminiModel(m.id)} disabled={settingsSaving}
+                      className={`w-full text-left px-4 py-3 rounded-lg border transition-all disabled:opacity-50 flex items-center justify-between ${geminiModel === m.id ? "border-blue-500 bg-white" : "border-gray-200 bg-white hover:border-gray-300"}`}>
+                      <div>
+                        <span className="text-sm font-medium text-gray-900">{m.label}</span>
+                        <span className="text-xs text-gray-400 ml-2">{m.note}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-400">{m.price} / 1M</span>
+                        {geminiModel === m.id && <span className="text-xs font-medium bg-blue-500 text-white px-2 py-0.5 rounded-full">Активна</span>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 

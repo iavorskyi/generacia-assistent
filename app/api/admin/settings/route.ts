@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getAdminDb } from "@/lib/firebase-admin";
-import { DEFAULT_SYSTEM_PROMPT, DEFAULT_CLAUDE_MODEL, invalidateSystemPromptCache, invalidateClaudeModelCache } from "@/lib/system-prompt";
+import { DEFAULT_SYSTEM_PROMPT, DEFAULT_CLAUDE_MODEL, DEFAULT_GEMINI_MODEL, invalidateSystemPromptCache, invalidateClaudeModelCache, invalidateGeminiModelCache } from "@/lib/system-prompt";
 
 export type AiProvider = "claude" | "gemini";
 
@@ -12,6 +12,18 @@ const VALID_CLAUDE_MODELS = [
   "claude-sonnet-4-6",
   "claude-opus-4-6",
   "claude-opus-4-5-20251101",
+];
+
+const VALID_GEMINI_MODELS = [
+  "gemini-2.0-flash",
+  "gemini-2.0-flash-lite",
+  "gemini-2.5-flash-lite",
+  "gemini-2.5-flash",
+  "gemini-2.5-pro",
+  "gemini-3-flash-preview",
+  "gemini-3-pro-preview",
+  "gemini-3.1-flash-lite-preview",
+  "gemini-3.1-pro-preview",
 ];
 
 // GET /api/admin/settings — returns current AI provider and system prompt
@@ -27,8 +39,9 @@ export async function GET() {
   const provider: AiProvider = (data?.provider as AiProvider) ?? "claude";
   const systemPrompt: string = (data?.systemPrompt as string) || DEFAULT_SYSTEM_PROMPT;
   const claudeModel: string = (data?.claudeModel as string) || DEFAULT_CLAUDE_MODEL;
+  const geminiModel: string = (data?.geminiModel as string) || DEFAULT_GEMINI_MODEL;
 
-  return NextResponse.json({ provider, systemPrompt, claudeModel });
+  return NextResponse.json({ provider, systemPrompt, claudeModel, geminiModel });
 }
 
 // POST /api/admin/settings — updates provider and/or system prompt
@@ -39,7 +52,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
-  let body: { provider?: string; systemPrompt?: string; claudeModel?: string };
+  let body: { provider?: string; systemPrompt?: string; claudeModel?: string; geminiModel?: string };
   try {
     body = await req.json();
   } catch {
@@ -72,6 +85,14 @@ export async function POST(req: Request) {
     invalidateClaudeModelCache();
   }
 
+  if (body.geminiModel !== undefined) {
+    if (!VALID_GEMINI_MODELS.includes(body.geminiModel)) {
+      return NextResponse.json({ error: "Invalid Gemini model" }, { status: 400 });
+    }
+    update.geminiModel = body.geminiModel;
+    invalidateGeminiModelCache();
+  }
+
   await db.collection("settings").doc("ai").set(update, { merge: true });
 
   const doc = await db.collection("settings").doc("ai").get();
@@ -80,5 +101,6 @@ export async function POST(req: Request) {
     provider: (data?.provider as AiProvider) ?? "claude",
     systemPrompt: (data?.systemPrompt as string) || DEFAULT_SYSTEM_PROMPT,
     claudeModel: (data?.claudeModel as string) || DEFAULT_CLAUDE_MODEL,
+    geminiModel: (data?.geminiModel as string) || DEFAULT_GEMINI_MODEL,
   });
 }
