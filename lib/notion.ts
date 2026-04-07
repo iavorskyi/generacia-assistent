@@ -300,8 +300,103 @@ async function renderBlock(block: Block): Promise<string | null> {
   return result;
 }
 
+async function fetchPagePropertiesAsMarkdown(pageId: string): Promise<string> {
+  const res = await fetch(`${NOTION_API_BASE}/pages/${pageId}`, {
+    headers: notionHeaders(),
+  });
+  if (!res.ok) return "";
+
+  const page = await res.json() as Block;
+  const props = page.properties as Record<string, Block> | undefined;
+  if (!props) return "";
+
+  const lines: string[] = [];
+
+  for (const [key, prop] of Object.entries(props)) {
+    const type = prop.type as string;
+    let value = "";
+
+    switch (type) {
+      case "title":
+        // Skip — already used as the document filename
+        continue;
+      case "rich_text":
+        value = extractRichText(prop.rich_text as RichTextItem[] | undefined);
+        break;
+      case "select": {
+        const s = prop.select as Block | null;
+        value = (s?.name as string) ?? "";
+        break;
+      }
+      case "multi_select":
+        value = ((prop.multi_select as Block[]) ?? [])
+          .map((s) => s.name as string)
+          .filter(Boolean)
+          .join(", ");
+        break;
+      case "status": {
+        const s = prop.status as Block | null;
+        value = (s?.name as string) ?? "";
+        break;
+      }
+      case "date": {
+        const d = prop.date as Block | null;
+        value = d ? `${d.start ?? ""}${d.end ? ` → ${d.end}` : ""}` : "";
+        break;
+      }
+      case "number":
+        value = prop.number != null ? String(prop.number) : "";
+        break;
+      case "checkbox":
+        value = prop.checkbox ? "так" : "ні";
+        break;
+      case "url":
+        value = (prop.url as string) ?? "";
+        break;
+      case "email":
+        value = (prop.email as string) ?? "";
+        break;
+      case "phone_number":
+        value = (prop.phone_number as string) ?? "";
+        break;
+      case "people":
+        value = ((prop.people as Block[]) ?? [])
+          .map((u) => u.name as string)
+          .filter(Boolean)
+          .join(", ");
+        break;
+      case "files":
+        value = ((prop.files as Block[]) ?? [])
+          .map((f) => {
+            const name = f.name as string | undefined;
+            const url =
+              (f.file as Block | undefined)?.url ??
+              (f.external as Block | undefined)?.url ?? "";
+            return name ? `${name}${url ? ` (${url})` : ""}` : (url as string);
+          })
+          .filter(Boolean)
+          .join(", ");
+        break;
+      default:
+        continue;
+    }
+
+    if (value.trim()) {
+      lines.push(`**${key}:** ${value.trim()}`);
+    }
+  }
+
+  return lines.join("\n\n");
+}
+
 export async function fetchPageAsMarkdown(pageId: string): Promise<string> {
-  const blocks = await fetchAllBlocks(pageId);
-  const markdown = await renderBlocks(blocks);
-  return markdown.trim();
+  const [propertiesMarkdown, blocksMarkdown] = await Promise.all([
+    fetchPagePropertiesAsMarkdown(pageId),
+    fetchAllBlocks(pageId).then(renderBlocks),
+  ]);
+
+  return [propertiesMarkdown, blocksMarkdown]
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join("\n\n---\n\n");
 }
